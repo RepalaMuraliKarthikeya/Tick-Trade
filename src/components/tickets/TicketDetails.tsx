@@ -34,11 +34,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useFirebase } from '@/firebase';
-import { doc, collection, writeBatch, serverTimestamp } from 'firebase/firestore';
-import {
-  updateDocumentNonBlocking,
-  setDocumentNonBlocking,
-} from '@/firebase/non-blocking-updates';
+import { doc, collection, writeBatch } from 'firebase/firestore';
 
 type TicketDetailsProps = {
   ticket: Ticket;
@@ -96,6 +92,7 @@ export function TicketDetails({ ticket, sellerName }: TicketDetailsProps) {
         title: 'Error',
         description: 'You must be logged in to purchase a ticket.',
       });
+      router.push('/login');
       return;
     }
 
@@ -131,7 +128,6 @@ export function TicketDetails({ ticket, sellerName }: TicketDetailsProps) {
           firestore,
           `users/${user.uid}/purchased_tickets/${transactionRef.id}`
         );
-        // We store the transaction details here for easy access on the profile page
         batch.set(userPurchasedRef, newTransaction);
 
 
