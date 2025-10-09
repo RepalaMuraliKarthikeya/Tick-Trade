@@ -35,6 +35,7 @@ import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useFirebase } from '@/firebase';
 import { doc, collection, writeBatch } from 'firebase/firestore';
+import { addDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 
 type TicketDetailsProps = {
   ticket: Ticket;
@@ -95,6 +96,15 @@ export function TicketDetails({ ticket, sellerName }: TicketDetailsProps) {
       router.push('/login');
       return;
     }
+    
+    if (user.uid === ticket.postedBy) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'You cannot purchase your own ticket.',
+      });
+      return;
+    }
 
     setIsPaying(true);
     setSelectedPaymentMethod(paymentMethod);
@@ -128,8 +138,10 @@ export function TicketDetails({ ticket, sellerName }: TicketDetailsProps) {
           firestore,
           `users/${user.uid}/purchased_tickets/${transactionRef.id}`
         );
-        batch.set(userPurchasedRef, newTransaction);
-
+        batch.set(userPurchasedRef, {
+            ...newTransaction,
+            id: transactionRef.id,
+        });
 
         // Commit the batch
         await batch.commit();
