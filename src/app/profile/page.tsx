@@ -2,10 +2,10 @@
 
 import { UserProfile } from '@/components/profile/UserProfile';
 import { useUser, useCollection, useFirestore } from '@/firebase';
-import type { Ticket } from '@/lib/types';
-import { collection, query, where } from 'firebase/firestore';
+import type { Ticket, Transaction } from '@/lib/types';
+import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useMemoFirebase } from '@/firebase/provider';
 
@@ -14,24 +14,54 @@ export default function ProfilePage() {
   const firestore = useFirestore();
   const router = useRouter();
 
+  const [postedTickets, setPostedTickets] = useState<Ticket[]>([]);
+  const [purchasedTickets, setPurchasedTickets] = useState<Ticket[]>([]);
+  const [isLoadingPosted, setIsLoadingPosted] = useState(true);
+  const [isLoadingPurchased, setIsLoadingPurchased] = useState(true);
+
   useEffect(() => {
     if (!isUserLoading && !user) {
       router.push('/login');
     }
   }, [user, isUserLoading, router]);
 
-  const postedTicketsQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
-    return query(collection(firestore, 'tickets'), where('postedBy', '==', user.uid));
-  }, [firestore, user]);
+  useEffect(() => {
+    if (user && firestore) {
+      const fetchPostedTickets = async () => {
+        setIsLoadingPosted(true);
+        const q = query(collection(firestore, 'tickets'), where('postedBy', '==', user.uid));
+        const querySnapshot = await getDocs(q);
+        const tickets = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Ticket));
+        setPostedTickets(tickets);
+        setIsLoadingPosted(false);
+      };
 
-  const purchasedTicketsQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
-    return collection(firestore, `users/${user.uid}/purchased_tickets`);
-  }, [firestore, user]);
+      const fetchPurchasedTickets = async () => {
+        setIsLoadingPurchased(true);
+        const purchasedCollectionRef = collection(firestore, `users/${user.uid}/purchased_tickets`);
+        const purchasedSnapshot = await getDocs(purchasedCollectionRef);
+        
+        const ticketPromises = purchasedSnapshot.docs.map(async (transactionDoc) => {
+          const transactionData = transactionDoc.data() as Transaction;
+          if (transactionData.ticketId) {
+            const ticketRef = doc(firestore, 'tickets', transactionData.ticketId);
+            const ticketSnap = await getDoc(ticketRef);
+            if (ticketSnap.exists()) {
+              return { id: ticketSnap.id, ...ticketSnap.data() } as Ticket;
+            }
+          }
+          return null;
+        });
 
-  const { data: postedTickets, isLoading: isLoadingPosted } = useCollection<Ticket>(postedTicketsQuery);
-  const { data: purchasedTickets, isLoading: isLoadingPurchased } = useCollection<Ticket>(purchasedTicketsQuery);
+        const tickets = (await Promise.all(ticketPromises)).filter((t): t is Ticket => t !== null);
+        setPurchasedTickets(tickets);
+        setIsLoadingPurchased(false);
+      };
+
+      fetchPostedTickets();
+      fetchPurchasedTickets();
+    }
+  }, [user, firestore]);
 
   if (isUserLoading || !user) {
     return (
@@ -65,8 +95,8 @@ export default function ProfilePage() {
     <div className="container mx-auto py-12">
       <UserProfile
         user={userProfile}
-        postedTickets={postedTickets || []}
-        purchasedTickets={purchasedTickets || []}
+        postedTickets={postedTickets}
+        purchasedTickets={purchasedTickets}
         isLoading={isLoadingPosted || isLoadingPurchased}
       />
     </div>

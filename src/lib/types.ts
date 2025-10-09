@@ -17,3 +17,13 @@ export type User = {
   name?: string | null;
   email?: string | null;
 };
+
+export type Transaction = {
+    id: string;
+    ticketId: string;
+    buyerId: string;
+    sellerId: string;
+    paymentMethod: string;
+    transactionDate: string; // ISO 8601 format
+    amount: number;
+};
