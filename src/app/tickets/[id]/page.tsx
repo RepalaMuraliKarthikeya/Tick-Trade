@@ -10,7 +10,8 @@ import { useMemoFirebase } from '@/firebase/provider';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useEffect } from 'react';
 
-export default function TicketDetailsPage({ params: { id } }: { params: { id: string } }) {
+export default function TicketDetailsPage({ params }: { params: { id: string } }) {
+  const { id } = params;
   const firestore = useFirestore();
   const { user } = useUser();
 
