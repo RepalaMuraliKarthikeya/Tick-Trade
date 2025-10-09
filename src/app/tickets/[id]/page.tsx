@@ -1,3 +1,4 @@
+
 "use client";
 
 import { TicketDetails } from '@/components/tickets/TicketDetails';
@@ -8,13 +9,13 @@ import { notFound } from 'next/navigation';
 import { useMemoFirebase } from '@/firebase/provider';
 import { Skeleton } from '@/components/ui/skeleton';
 
-export default function TicketDetailsPage({ params }: { params: { id: string } }) {
+export default function TicketDetailsPage({ params: { id } }: { params: { id: string } }) {
   const firestore = useFirestore();
 
   const ticketRef = useMemoFirebase(() => {
     if (!firestore) return null;
-    return doc(firestore, 'tickets', params.id);
-  }, [firestore, params.id]);
+    return doc(firestore, 'tickets', id);
+  }, [firestore, id]);
 
   const { data: ticket, isLoading: isTicketLoading } = useDoc<Omit<Ticket, 'id'>>(ticketRef);
 
@@ -33,7 +34,7 @@ export default function TicketDetailsPage({ params }: { params: { id: string } }
     notFound();
   }
 
-  const ticketWithId: Ticket = { ...ticket, id: params.id };
+  const ticketWithId: Ticket = { ...ticket, id: id };
 
   return (
     <div className="container mx-auto py-12">
