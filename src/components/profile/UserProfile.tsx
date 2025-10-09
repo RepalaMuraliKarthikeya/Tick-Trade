@@ -4,20 +4,22 @@ import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/ca
 import { TicketCard } from '../tickets/TicketCard';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { Film, Ticket as TicketIcon } from 'lucide-react';
+import { TicketList } from '../tickets/TicketList';
 
 type UserProfileProps = {
   user: User;
   postedTickets: Ticket[];
   purchasedTickets: Ticket[];
+  isLoading: boolean;
 };
 
-export function UserProfile({ user, postedTickets, purchasedTickets }: UserProfileProps) {
+export function UserProfile({ user, postedTickets, purchasedTickets, isLoading }: UserProfileProps) {
   return (
     <div className="space-y-8">
       <header className="flex flex-col sm:flex-row items-center gap-6">
         <Avatar className="h-24 w-24 border-4 border-primary">
-          <AvatarImage src={`https://api.dicebear.com/7.x/adventurer/svg?seed=${user.name}`} alt={user.name} />
-          <AvatarFallback>{user.name.charAt(0).toUpperCase()}</AvatarFallback>
+          <AvatarImage src={`https://api.dicebear.com/7.x/adventurer/svg?seed=${user.name}`} alt={user.name ?? ''} />
+          <AvatarFallback>{user.name?.charAt(0).toUpperCase()}</AvatarFallback>
         </Avatar>
         <div>
           <h1 className="text-4xl font-headline font-bold">{user.name}</h1>
@@ -35,17 +37,21 @@ export function UserProfile({ user, postedTickets, purchasedTickets }: UserProfi
           <TabsTrigger value="purchased">Tickets Purchased</TabsTrigger>
         </TabsList>
         <TabsContent value="posted" className="mt-6">
-          <TicketHistoryList tickets={postedTickets} emptyMessage="You haven't posted any tickets yet." />
+          <TicketHistoryList tickets={postedTickets} isLoading={isLoading} emptyMessage="You haven't posted any tickets yet." />
         </TabsContent>
         <TabsContent value="purchased" className="mt-6">
-          <TicketHistoryList tickets={purchasedTickets} emptyMessage="You haven't purchased any tickets yet. Browse available tickets to get started!" />
+          <TicketHistoryList tickets={purchasedTickets} isLoading={isLoading} emptyMessage="You haven't purchased any tickets yet. Browse available tickets to get started!" />
         </TabsContent>
       </Tabs>
     </div>
   );
 }
 
-function TicketHistoryList({ tickets, emptyMessage }: { tickets: Ticket[], emptyMessage: string }) {
+function TicketHistoryList({ tickets, emptyMessage, isLoading }: { tickets: Ticket[], emptyMessage: string, isLoading: boolean }) {
+  if (isLoading) {
+    return <TicketList tickets={null} isLoading={true} />;
+  }
+  
   if (tickets.length === 0) {
     return (
       <Card className="text-center py-20 bg-card/50 backdrop-blur-sm border-white/10">

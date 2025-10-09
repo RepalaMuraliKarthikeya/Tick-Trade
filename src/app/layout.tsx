@@ -3,6 +3,7 @@ import './globals.css';
 import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
 import { Toaster } from "@/components/ui/toaster";
+import { FirebaseClientProvider } from '@/firebase';
 
 export const metadata: Metadata = {
   title: 'MovieRush',
@@ -22,12 +23,14 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=PT+Sans:ital,wght@0,400;0,700;1,400;1,700&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet" />
       </head>
       <body className="font-body antialiased bg-background">
-        <div className="flex min-h-screen flex-col">
-          <Navbar />
-          <main className="flex-grow">{children}</main>
-          <Footer />
-        </div>
-        <Toaster />
+        <FirebaseClientProvider>
+          <div className="flex min-h-screen flex-col">
+            <Navbar />
+            <main className="flex-grow">{children}</main>
+            <Footer />
+          </div>
+          <Toaster />
+        </FirebaseClientProvider>
       </body>
     </html>
   );

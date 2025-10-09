@@ -1,12 +1,18 @@
 "use server";
 
 import * as z from 'zod';
-import { redirect } from 'next/navigation';
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { initializeFirebase } from '@/firebase';
 
 const authSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
 });
+
+// IMPORTANT: This is a simplified example for server-side auth.
+// In a real app, you'd handle sessions and errors more robustly.
+// We are using client-side auth state management primarily, so these actions
+// are mainly to demonstrate the capability but are not the main flow.
 
 export async function login(values: z.infer<typeof authSchema>) {
   const validatedFields = authSchema.safeParse(values);
@@ -14,11 +20,10 @@ export async function login(values: z.infer<typeof authSchema>) {
     return { success: false, error: "Invalid fields provided." };
   }
 
-  // Mock login logic. In a real app, you would verify user credentials
-  // against your database and then create a session (e.g., using cookies).
-  console.log("Attempting to log in user:", validatedFields.data.email);
+  // NOTE: This server-side login is just for show. The actual login that affects
+  // the UI is handled on the client in AuthForm.tsx for real-time state updates.
+  console.log("Server action 'login' was called for:", validatedFields.data.email);
   
-  // For this demo, we'll assume login is always successful.
   return { success: true };
 }
 
@@ -28,10 +33,9 @@ export async function signup(values: z.infer<typeof authSchema>) {
     return { success: false, error: "Invalid fields provided." };
   }
   
-  // Mock signup logic. In a real app, you would create a new user
-  // record in your database and then create a session.
-  console.log("Attempting to sign up user:", validatedFields.data.email);
+  // NOTE: This server-side signup is just for show. The actual signup that affects
+  // the UI is handled on the client in AuthForm.tsx for real-time state updates.
+  console.log("Server action 'signup' was called for:", validatedFields.data.email);
 
-  // For this demo, we'll assume signup is always successful.
   return { success: true };
 }

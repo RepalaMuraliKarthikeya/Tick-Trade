@@ -3,18 +3,17 @@ export type Ticket = {
   movieName: string;
   theaterName: string;
   location: string;
-  showDate: string;
-  showTime: string;
+  dateTime: string; // ISO 8601 format
   ticketCount: number;
-  price: number;
-  imageUrl: string;
-  imageHint: string;
+  ticketPrice: number;
+  posterImageUrl: string;
+  imageHint?: string;
   postedBy: string; // userId
   status: 'available' | 'sold';
 };
 
 export type User = {
-  id: string;
-  name: string;
-  email: string;
+  id: string; // This will be the Firebase UID
+  name?: string | null;
+  email?: string | null;
 };

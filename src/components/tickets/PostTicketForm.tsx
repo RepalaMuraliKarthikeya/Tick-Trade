@@ -22,6 +22,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
+import { useFirebase } from '@/firebase';
+import { addDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+import { collection } from 'firebase/firestore';
 
 const postTicketSchema = z.object({
   movieName: z.string().min(1, "Movie name is required"),
@@ -31,14 +34,14 @@ const postTicketSchema = z.object({
   showTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, "Invalid time format. Use 24-hour format (e.g., 19:30)."),
   ticketCount: z.coerce.number().int().min(1, "At least one ticket is required"),
   price: z.coerce.number().min(0, "Price cannot be negative"),
-  // In a real app, image handling would be more robust.
-  imageUrl: z.any().optional(),
+  imageUrl: z.string().url("Please enter a valid image URL").optional(),
 });
 
 export function PostTicketForm() {
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const { toast } = useToast();
+  const { firestore, user } = useFirebase();
 
   const form = useForm<z.infer<typeof postTicketSchema>>({
     resolver: zodResolver(postTicketSchema),
@@ -48,14 +51,52 @@ export function PostTicketForm() {
       location: "",
       showTime: "20:00",
       ticketCount: 1,
-      price: 1500,
+      price: 15.00,
+      imageUrl: "https://picsum.photos/seed/movieticket/400/600",
     },
   });
 
   function onSubmit(values: z.infer<typeof postTicketSchema>) {
+    if (!user) {
+      toast({
+        variant: "destructive",
+        title: "Authentication Error",
+        description: "You must be logged in to post a ticket.",
+      });
+      router.push('/login');
+      return;
+    }
+
+    if (!firestore) {
+        toast({
+            variant: "destructive",
+            title: "Error",
+            description: "Firestore is not available.",
+          });
+        return;
+    }
+
+
     startTransition(async () => {
-      // In a real app, this would call a server action to save data to Firestore and upload the image.
-      console.log("Form submitted with values:", values);
+      const dateTime = new Date(values.showDate);
+      const [hours, minutes] = values.showTime.split(':');
+      dateTime.setHours(parseInt(hours, 10));
+      dateTime.setMinutes(parseInt(minutes, 10));
+
+      const newTicket = {
+        movieName: values.movieName,
+        theaterName: values.theaterName,
+        location: values.location,
+        dateTime: dateTime.toISOString(),
+        ticketCount: values.ticketCount,
+        ticketPrice: values.price,
+        posterImageUrl: values.imageUrl || "https://picsum.photos/seed/default-movie/400/600",
+        postedBy: user.uid,
+        status: 'available' as 'available' | 'sold',
+      };
+      
+      const ticketsCollection = collection(firestore, 'tickets');
+      await addDocumentNonBlocking(ticketsCollection, newTicket);
       
       toast({
         title: "Ticket Posted!",
@@ -138,18 +179,18 @@ export function PostTicketForm() {
         
         <FormField control={form.control} name="imageUrl" render={({ field }) => (
           <FormItem>
-            <FormLabel>Ticket / Poster Image</FormLabel>
+            <FormLabel>Ticket / Poster Image URL</FormLabel>
             <FormControl>
-                <Input type="file" className="file:text-primary file:font-medium" />
+                <Input placeholder="https://example.com/poster.jpg" {...field} />
             </FormControl>
-            <FormDescription>Upload an image of the ticket or movie poster.</FormDescription>
+            <FormDescription>Provide a URL for the ticket or movie poster.</FormDescription>
             <FormMessage />
           </FormItem>
         )} />
 
-        <Button type="submit" className="w-full bg-accent text-accent-foreground hover:bg-accent/90" disabled={isPending}>
+        <Button type="submit" className="w-full bg-accent text-accent-foreground hover:bg-accent/90" disabled={isPending || !user}>
           {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Post Ticket
+          {user ? 'Post Ticket' : 'Login to Post'}
         </Button>
       </form>
     </Form>

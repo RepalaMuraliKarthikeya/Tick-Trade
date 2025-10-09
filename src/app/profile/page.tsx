@@ -1,22 +1,73 @@
+"use client";
+
 import { UserProfile } from '@/components/profile/UserProfile';
-import { mockTickets, mockUsers } from '@/lib/mock-data';
+import { useUser, useCollection, useFirestore } from '@/firebase';
+import type { Ticket } from '@/lib/types';
+import { collection, query, where } from 'firebase/firestore';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useMemoFirebase } from '@/firebase/provider';
 
 export default function ProfilePage() {
-  // In a real app, you'd get the logged-in user's ID from a session.
-  // We'll use a mock user if available, otherwise a placeholder.
-  const currentUser = mockUsers.length > 0 ? mockUsers[0] : { id: 'user-1', name: 'User', email: 'user@example.com' };
-  const postedTickets = mockTickets.filter(t => t.postedBy === currentUser.id);
-  
-  // For this mock, we'll find tickets that are sold and were posted by other users,
-  // then assign the first one to our current user as a "purchased" ticket.
-  const purchasedTickets = mockTickets.filter(t => t.status === 'sold' && t.postedBy !== currentUser.id).slice(0, 1);
+  const { user, isUserLoading, userError } = useUser();
+  const firestore = useFirestore();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!isUserLoading && !user) {
+      router.push('/login');
+    }
+  }, [user, isUserLoading, router]);
+
+  const postedTicketsQuery = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return query(collection(firestore, 'tickets'), where('postedBy', '==', user.uid));
+  }, [firestore, user]);
+
+  const purchasedTicketsQuery = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return collection(firestore, `users/${user.uid}/purchased_tickets`);
+  }, [firestore, user]);
+
+  const { data: postedTickets, isLoading: isLoadingPosted } = useCollection<Ticket>(postedTicketsQuery);
+  const { data: purchasedTickets, isLoading: isLoadingPurchased } = useCollection<Ticket>(purchasedTicketsQuery);
+
+  if (isUserLoading || !user) {
+    return (
+      <div className="container mx-auto py-12">
+        <div className="space-y-8">
+          <header className="flex flex-col sm:flex-row items-center gap-6">
+            <Skeleton className="h-24 w-24 rounded-full" />
+            <div className="space-y-2">
+              <Skeleton className="h-10 w-48" />
+              <Skeleton className="h-5 w-64" />
+            </div>
+          </header>
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-64 w-full" />
+        </div>
+      </div>
+    );
+  }
+
+  if (userError) {
+    return <div>Error loading user profile.</div>
+  }
+
+  const userProfile = {
+    id: user.uid,
+    name: user.displayName || 'Anonymous User',
+    email: user.email,
+  };
 
   return (
     <div className="container mx-auto py-12">
       <UserProfile
-        user={currentUser}
-        postedTickets={postedTickets}
-        purchasedTickets={purchasedTickets}
+        user={userProfile}
+        postedTickets={postedTickets || []}
+        purchasedTickets={purchasedTickets || []}
+        isLoading={isLoadingPosted || isLoadingPurchased}
       />
     </div>
   );

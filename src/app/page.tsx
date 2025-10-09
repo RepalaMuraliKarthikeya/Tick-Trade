@@ -1,25 +1,50 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { TicketList } from '@/components/tickets/TicketList';
-import { mockTickets } from '@/lib/mock-data';
 import { SearchBar } from '@/components/tickets/SearchBar';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import Image from 'next/image';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import type { Ticket } from '@/lib/types';
+import { useCollection, useFirestore } from '@/firebase';
+import { collection, query, where } from 'firebase/firestore';
+import { useMemoFirebase } from '@/firebase/provider';
 
 export default function Home() {
-  const allAvailableTickets: Ticket[] = mockTickets.filter(t => t.status === 'available');
-  const [filteredTickets, setFilteredTickets] = useState<Ticket[]>(allAvailableTickets);
+  const firestore = useFirestore();
 
-  const handleSearch = (query: string) => {
-    if (!query) {
-      setFilteredTickets(allAvailableTickets);
+  const ticketsCollection = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'tickets');
+  }, [firestore]);
+
+  const availableTicketsQuery = useMemoFirebase(() => {
+    if (!ticketsCollection) return null;
+    return query(ticketsCollection, where('status', '==', 'available'));
+  }, [ticketsCollection]);
+
+  const { data: allAvailableTickets, isLoading } = useCollection<Omit<Ticket, 'id'>>(availableTicketsQuery);
+
+  const [filteredTickets, setFilteredTickets] = useState<Ticket[] | null>(null);
+
+  const ticketsToDisplay = useMemo(() => {
+    return filteredTickets !== null ? filteredTickets : allAvailableTickets;
+  }, [filteredTickets, allAvailableTickets]);
+
+  const handleSearch = (searchQuery: string) => {
+    if (!allAvailableTickets) {
+      setFilteredTickets([]);
       return;
     }
-    const lowercasedQuery = query.toLowerCase();
+
+    if (!searchQuery) {
+      setFilteredTickets(null); // Reset to show all available tickets
+      return;
+    }
+
+    const lowercasedQuery = searchQuery.toLowerCase();
     const results = allAvailableTickets.filter(
       (ticket) =>
         ticket.movieName.toLowerCase().includes(lowercasedQuery) ||
@@ -61,7 +86,7 @@ export default function Home() {
             </Button>
           </div>
         </div>
-        <TicketList tickets={filteredTickets} />
+        <TicketList tickets={ticketsToDisplay} isLoading={isLoading} />
       </div>
     </>
   );

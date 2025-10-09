@@ -20,6 +20,9 @@ import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
+import { useFirebase } from '@/firebase';
+import { doc } from 'firebase/firestore';
+import { updateDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 
 type TicketDetailsProps = {
   ticket: Ticket;
@@ -33,24 +36,42 @@ const paymentMethods = [
 ];
 
 export function TicketDetails({ ticket, sellerName }: TicketDetailsProps) {
-  const showDateTime = new Date(`${ticket.showDate}T${ticket.showTime}`);
+  const showDateTime = new Date(ticket.dateTime);
   const router = useRouter();
   const { toast } = useToast();
+  const { firestore, user } = useFirebase();
   const [isPaying, setIsPaying] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   const handlePayment = () => {
+    if (!user || !firestore) {
+        toast({
+            variant: "destructive",
+            title: "Error",
+            description: "You must be logged in to purchase a ticket.",
+        });
+        return;
+    }
     setIsPaying(true);
     // Mock payment processing time
     setTimeout(() => {
-      setIsPaying(false);
-      setIsDialogOpen(false);
-      toast({
-        title: "Payment Successful!",
-        description: `You've purchased ${ticket.ticketCount} ticket(s) for ${ticket.movieName}.`,
-      });
-      // In a real app, update ticket status and user data via server action
-      router.push('/profile');
+        const ticketRef = doc(firestore, 'tickets', ticket.id);
+        // This is a mock payment, in a real app you'd have a transaction flow.
+        // Here we just update the ticket status.
+        updateDocumentNonBlocking(ticketRef, { status: 'sold' });
+
+        // Add to user's purchased tickets (denormalization)
+        const userPurchasedRef = doc(firestore, `users/${user.uid}/purchased_tickets`, ticket.id);
+        updateDocumentNonBlocking(userPurchasedRef, { ...ticket, status: 'sold' });
+
+
+        setIsPaying(false);
+        setIsDialogOpen(false);
+        toast({
+            title: "Payment Successful!",
+            description: `You've purchased ${ticket.ticketCount} ticket(s) for ${ticket.movieName}.`,
+        });
+        router.push('/profile');
     }, 2000);
   };
 
@@ -60,7 +81,7 @@ export function TicketDetails({ ticket, sellerName }: TicketDetailsProps) {
         <Card className="overflow-hidden sticky top-24 bg-card/50 backdrop-blur-sm border-white/10">
           <div className="relative aspect-[2/3] w-full">
             <Image
-              src={ticket.imageUrl}
+              src={ticket.posterImageUrl}
               alt={ticket.movieName}
               fill
               className="object-cover"
@@ -94,13 +115,13 @@ export function TicketDetails({ ticket, sellerName }: TicketDetailsProps) {
         <Card className="bg-card/50 backdrop-blur-sm border-white/10">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>Total Price</CardTitle>
-            <p className="text-4xl font-bold text-primary">₹{(ticket.price * ticket.ticketCount).toFixed(2)}</p>
+            <p className="text-4xl font-bold text-primary">₹{(ticket.ticketPrice * ticket.ticketCount).toFixed(2)}</p>
           </CardHeader>
           <CardContent>
             <AlertDialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <AlertDialogTrigger asChild>
-                <Button size="lg" className="w-full text-lg" disabled={ticket.status === 'sold'}>
-                  {ticket.status === 'sold' ? 'Sold Out' : 'Buy Ticket'}
+                <Button size="lg" className="w-full text-lg" disabled={ticket.status === 'sold' || user?.uid === ticket.postedBy}>
+                  {ticket.status === 'sold' ? 'Sold Out' : (user?.uid === ticket.postedBy ? 'This is your ticket' : 'Buy Ticket')}
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>

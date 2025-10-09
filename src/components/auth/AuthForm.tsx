@@ -14,12 +14,14 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { login, signup } from '@/lib/actions';
 import { useTransition } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import Link from 'next/link';
+import { useAuth } from '@/firebase';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
+import { FirebaseError } from 'firebase/app';
 
 const formSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email address." }),
@@ -34,6 +36,7 @@ export function AuthForm({ mode }: AuthFormProps) {
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const { toast } = useToast();
+  const auth = useAuth();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -45,19 +48,40 @@ export function AuthForm({ mode }: AuthFormProps) {
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     startTransition(async () => {
-      const action = mode === 'login' ? login : signup;
-      const result = await action(values);
-      if (result.success) {
+      try {
+        if (mode === 'login') {
+          await signInWithEmailAndPassword(auth, values.email, values.password);
+        } else {
+          await createUserWithEmailAndPassword(auth, values.email, values.password);
+        }
         toast({
           title: mode === 'login' ? "Login Successful" : "Signup Successful",
           description: "Welcome to MovieRush! Redirecting...",
         });
         router.push('/profile');
-      } else {
+      } catch (error) {
+        let errorMessage = "An unexpected error occurred.";
+        if (error instanceof FirebaseError) {
+            switch (error.code) {
+                case 'auth/user-not-found':
+                case 'auth/wrong-password':
+                    errorMessage = 'Invalid email or password.';
+                    break;
+                case 'auth/email-already-in-use':
+                    errorMessage = 'This email address is already in use.';
+                    break;
+                case 'auth/weak-password':
+                    errorMessage = 'The password is too weak.';
+                    break;
+                default:
+                    errorMessage = error.message;
+                    break;
+            }
+        }
         toast({
           variant: "destructive",
           title: "Authentication Failed",
-          description: result.error,
+          description: errorMessage,
         });
       }
     });

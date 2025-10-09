@@ -2,7 +2,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import type { Ticket } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
-import { Calendar, Clock, MapPin, Ticket as TicketIcon } from 'lucide-react';
+import { Calendar, MapPin, Ticket as TicketIcon } from 'lucide-react';
 import { format } from 'date-fns';
 
 type TicketCardProps = {
@@ -10,14 +10,14 @@ type TicketCardProps = {
 };
 
 export function TicketCard({ ticket }: TicketCardProps) {
-  const showDateTime = new Date(`${ticket.showDate}T${ticket.showTime}`);
+  const showDateTime = new Date(ticket.dateTime);
 
   return (
     <Link href={`/tickets/${ticket.id}`} className="group block">
       <Card className="overflow-hidden h-full transition-all duration-300 ease-in-out group-hover:shadow-xl group-hover:shadow-primary/20 group-hover:-translate-y-2 bg-card/50 backdrop-blur-sm border-white/10">
         <div className="relative aspect-[2/3] w-full">
           <Image
-            src={ticket.imageUrl}
+            src={ticket.posterImageUrl}
             alt={ticket.movieName}
             fill
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
@@ -33,7 +33,7 @@ export function TicketCard({ ticket }: TicketCardProps) {
         <CardContent className="p-4 space-y-3">
             <div className="flex justify-between items-center">
                 <div className="font-bold text-2xl text-accent">
-                    ₹{ticket.price.toFixed(2)}
+                    ₹{ticket.ticketPrice.toFixed(2)}
                     <span className="text-sm font-normal text-muted-foreground"> / ticket</span>
                 </div>
                  <div className="flex items-center gap-2 text-muted-foreground">
