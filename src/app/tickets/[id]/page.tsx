@@ -2,44 +2,58 @@
 "use client";
 
 import { TicketDetails } from '@/components/tickets/TicketDetails';
-import { useDoc, useDoc as useUserDoc, useFirestore } from '@/firebase'; // Renamed to avoid conflict
+import { useDoc, useFirestore, useUser } from '@/firebase';
 import type { Ticket, User } from '@/lib/types';
 import { doc } from 'firebase/firestore';
 import { notFound } from 'next/navigation';
 import { useMemoFirebase } from '@/firebase/provider';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useEffect } from 'react';
 
 export default function TicketDetailsPage({ params }: { params: { id: string } }) {
   const { id } = params;
   const firestore = useFirestore();
+  const { user } = useUser();
 
   const ticketRef = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !id) return null;
     return doc(firestore, 'tickets', id);
   }, [firestore, id]);
 
-  const { data: ticket, isLoading: isTicketLoading } = useDoc<Omit<Ticket, 'id'>>(ticketRef);
+  const { data: ticket, isLoading: isTicketLoading, error: ticketError } = useDoc<Omit<Ticket, 'id'>>(ticketRef);
 
   const sellerRef = useMemoFirebase(() => {
     if (!firestore || !ticket?.postedBy) return null;
     return doc(firestore, 'users', ticket.postedBy);
   }, [firestore, ticket]);
 
-  const { data: seller, isLoading: isSellerLoading } = useUserDoc<User>(sellerRef);
-  
-  if (isTicketLoading || isSellerLoading) {
+  const { data: seller, isLoading: isSellerLoading } = useDoc<User>(sellerRef);
+
+  useEffect(() => {
+    if (ticketError) {
+      console.error("Error fetching ticket:", ticketError);
+    }
+  }, [ticketError]);
+
+  if (isTicketLoading || (ticket && isSellerLoading)) {
     return <TicketDetailsSkeleton />;
   }
 
+  // After loading, if there's no ticket, then it's a 404.
   if (!ticket) {
     notFound();
   }
 
   const ticketWithId: Ticket = { ...ticket, id: id };
+  const currentBuyer = user ? { id: user.uid, name: user.displayName, email: user.email } : null;
 
   return (
     <div className="container mx-auto py-12">
-      <TicketDetails ticket={ticketWithId} sellerName={seller?.name ?? 'Anonymous'} />
+      <TicketDetails 
+        ticket={ticketWithId} 
+        sellerName={seller?.name ?? 'Anonymous'} 
+        buyer={currentBuyer}
+      />
     </div>
   );
 }

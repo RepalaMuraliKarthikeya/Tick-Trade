@@ -1,13 +1,13 @@
 'use client';
 
 import Image from 'next/image';
-import type { Ticket, Transaction } from '@/lib/types';
+import type { Ticket, Transaction, User } from '@/lib/types';
 import {
   Calendar,
   Clock,
   MapPin,
   Ticket as TicketIcon,
-  User,
+  User as UserIcon,
   CreditCard,
   Banknote,
 } from 'lucide-react';
@@ -35,11 +35,11 @@ import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useFirebase } from '@/firebase';
 import { doc, collection, writeBatch } from 'firebase/firestore';
-import { addDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 
 type TicketDetailsProps = {
   ticket: Ticket;
   sellerName: string;
+  buyer: User | null;
 };
 
 const paymentMethods = [
@@ -76,18 +76,18 @@ const paymentMethods = [
   { name: 'Credit / Debit Card', icon: <CreditCard className="h-6 w-6" /> },
 ];
 
-export function TicketDetails({ ticket, sellerName }: TicketDetailsProps) {
+export function TicketDetails({ ticket, sellerName, buyer }: TicketDetailsProps) {
   const showDateTime = new Date(ticket.dateTime);
   const router = useRouter();
   const { toast } = useToast();
-  const { firestore, user } = useFirebase();
+  const { firestore } = useFirebase();
   const [isPaying, setIsPaying] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string | null>(null);
 
 
   const handlePayment = async (paymentMethod: string) => {
-    if (!user || !firestore) {
+    if (!buyer || !firestore) {
       toast({
         variant: 'destructive',
         title: 'Error',
@@ -97,7 +97,7 @@ export function TicketDetails({ ticket, sellerName }: TicketDetailsProps) {
       return;
     }
     
-    if (user.uid === ticket.postedBy) {
+    if (buyer.id === ticket.postedBy) {
       toast({
         variant: 'destructive',
         title: 'Error',
@@ -108,24 +108,19 @@ export function TicketDetails({ ticket, sellerName }: TicketDetailsProps) {
 
     setIsPaying(true);
     setSelectedPaymentMethod(paymentMethod);
-
-    // In a real app, you would integrate with a payment gateway here.
-    // We will simulate a successful payment after a short delay.
-
+    
+    // Using a timeout to simulate a payment gateway
     setTimeout(async () => {
       try {
-        // Use a batch write to ensure all or none of the operations succeed.
         const batch = writeBatch(firestore);
 
-        // 1. Update the ticket's status to 'sold'
         const ticketRef = doc(firestore, 'tickets', ticket.id);
         batch.update(ticketRef, { status: 'sold' });
 
-        // 2. Create a new transaction document
         const transactionRef = doc(collection(firestore, 'transactions'));
         const newTransaction: Omit<Transaction, 'id'> = {
           ticketId: ticket.id,
-          buyerId: user.uid,
+          buyerId: buyer.id,
           sellerId: ticket.postedBy,
           paymentMethod: paymentMethod,
           transactionDate: new Date().toISOString(),
@@ -133,17 +128,9 @@ export function TicketDetails({ ticket, sellerName }: TicketDetailsProps) {
         };
         batch.set(transactionRef, newTransaction);
         
-        // 3. Add a reference to the transaction in the buyer's purchased_tickets subcollection
-        const userPurchasedRef = doc(
-          firestore,
-          `users/${user.uid}/purchased_tickets/${transactionRef.id}`
-        );
-        batch.set(userPurchasedRef, {
-            ...newTransaction,
-            id: transactionRef.id,
-        });
+        const userPurchasedRef = doc(firestore, `users/${buyer.id}/purchased_tickets/${transactionRef.id}`);
+        batch.set(userPurchasedRef, { ...newTransaction, id: transactionRef.id });
 
-        // Commit the batch
         await batch.commit();
 
         toast({
@@ -151,6 +138,7 @@ export function TicketDetails({ ticket, sellerName }: TicketDetailsProps) {
           description: `You've purchased ${ticket.ticketCount} ticket(s) for ${ticket.movieName}.`,
         });
         router.push('/profile');
+
       } catch (error) {
         console.error('Transaction failed:', error);
         toast({
@@ -218,7 +206,7 @@ export function TicketDetails({ ticket, sellerName }: TicketDetailsProps) {
             label="Quantity"
             value={`${ticket.ticketCount} Ticket(s)`}
           />
-          <InfoItem icon={User} label="Seller" value={sellerName} />
+          <InfoItem icon={UserIcon} label="Seller" value={sellerName} />
         </div>
 
         <Card className="bg-card/50 backdrop-blur-sm border-white/10">
@@ -235,12 +223,12 @@ export function TicketDetails({ ticket, sellerName }: TicketDetailsProps) {
                   size="lg"
                   className="w-full text-lg"
                   disabled={
-                    ticket.status === 'sold' || user?.uid === ticket.postedBy
+                    ticket.status === 'sold' || buyer?.id === ticket.postedBy
                   }
                 >
                   {ticket.status === 'sold'
                     ? 'Sold Out'
-                    : user?.uid === ticket.postedBy
+                    : buyer?.id === ticket.postedBy
                     ? 'This is your ticket'
                     : 'Buy Ticket'}
                 </Button>
