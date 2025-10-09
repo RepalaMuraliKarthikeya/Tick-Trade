@@ -94,7 +94,7 @@ export function TicketDetails({ ticket, sellerName }: TicketDetailsProps) {
         <Card className="bg-card/50 backdrop-blur-sm border-white/10">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>Total Price</CardTitle>
-            <p className="text-4xl font-bold text-primary">${(ticket.price * ticket.ticketCount).toFixed(2)}</p>
+            <p className="text-4xl font-bold text-primary">₹{(ticket.price * ticket.ticketCount).toFixed(2)}</p>
           </CardHeader>
           <CardContent>
             <AlertDialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

@@ -33,7 +33,7 @@ export function TicketCard({ ticket }: TicketCardProps) {
         <CardContent className="p-4 space-y-3">
             <div className="flex justify-between items-center">
                 <div className="font-bold text-2xl text-accent">
-                    ${ticket.price.toFixed(2)}
+                    ₹{ticket.price.toFixed(2)}
                     <span className="text-sm font-normal text-muted-foreground"> / ticket</span>
                 </div>
                  <div className="flex items-center gap-2 text-muted-foreground">

@@ -3,8 +3,8 @@ import { mockTickets, mockUsers } from '@/lib/mock-data';
 
 export default function ProfilePage() {
   // In a real app, you'd get the logged-in user's ID from a session.
-  // We'll use the first mock user as the "logged in" user for this demo.
-  const currentUser = mockUsers[0];
+  // We'll use a mock user if available, otherwise a placeholder.
+  const currentUser = mockUsers.length > 0 ? mockUsers[0] : { id: 'user-1', name: 'User', email: 'user@example.com' };
   const postedTickets = mockTickets.filter(t => t.postedBy === currentUser.id);
   
   // For this mock, we'll find tickets that are sold and were posted by other users,

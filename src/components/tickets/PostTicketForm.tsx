@@ -48,7 +48,7 @@ export function PostTicketForm() {
       location: "",
       showTime: "20:00",
       ticketCount: 1,
-      price: 20,
+      price: 1500,
     },
   });
 
@@ -130,7 +130,7 @@ export function PostTicketForm() {
           <FormField control={form.control} name="price" render={({ field }) => (
             <FormItem>
               <FormLabel>Price (per ticket)</FormLabel>
-              <FormControl><Input type="number" min="0" step="0.01" placeholder="$" {...field} /></FormControl>
+              <FormControl><Input type="number" min="0" step="0.01" placeholder="₹" {...field} /></FormControl>
               <FormMessage />
             </FormItem>
           )} />
