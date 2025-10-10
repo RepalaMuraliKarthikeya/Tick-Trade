@@ -10,15 +10,11 @@ import {
   User as UserIcon,
   CreditCard,
   Banknote,
+  Loader2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
   AlertDialog,
@@ -32,7 +28,6 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { Loader2 } from 'lucide-react';
 import { useFirebase } from '@/firebase';
 import { doc, collection, writeBatch } from 'firebase/firestore';
 
@@ -43,7 +38,10 @@ type TicketDetailsProps = {
 };
 
 const paymentMethods = [
-  { name: 'PhonePe / UPI', icon: <Banknote className="h-6 w-6" /> },
+  {
+    name: 'PhonePe / UPI',
+    icon: <Banknote className="h-6 w-6" />,
+  },
   {
     name: 'Google Pay',
     icon: (
@@ -58,22 +56,13 @@ const paymentMethods = [
           d="M19.365 9.686l-2.074-2.075a.31.31 0 00-.464 0l-3.26 3.26-3.23-3.23a.309.309 0 00-.464 0L7.799 9.752a.31.31 0 000 .464l2.046 2.046-2.046 2.046a.31.31 0 000 .464l2.074 2.074a.31.31 0 00.464 0l3.26-3.26 3.23 3.23a.31.31 0 00.464 0l2.074-2.074a.31.31 0 000-.464l-2.046-2.046 2.046-2.046a.326.326 0 000-.464z"
           fill="#367af6"
         />
-        <path
-          d="M12.012 12.018L9.938 9.945a.31.31 0 00-.464 0L7.4 11.99a.326.326 0 000 .464l2.046 2.046 2.074-2.075a.31.31 0 00.492-.407z"
-          fill="#f2553f"
-        />
-        <path
-          d="M19.455 11.99l-2.074-2.075a.31.31 0 00-.464 0l-4.903 4.903-2.527-2.527a.31.31 0 00-.464 0L7.4 13.916a.31.31 0 000 .464l2.046 2.046-2.046 2.046a.31.31 0 000 .464l2.074 2.074a.31.31 0 00.464 0L17.3 15.686l-.004.003h.004l2.155-2.155a.31.31 0 000-.464l-2.074-2.075z"
-          fill="#ffbc00"
-        />
-        <path
-          d="M10.362 14.38l-2.962-2.963a.31.31 0 00-.464 0L4.86 13.49a.31.31 0 000 .464l2.963 2.962.03.03 4.902-4.902-2.527-2.527-.035.034-2.79 2.79z"
-          fill="#529c57"
-        />
       </svg>
     ),
   },
-  { name: 'Credit / Debit Card', icon: <CreditCard className="h-6 w-6" /> },
+  {
+    name: 'Credit / Debit Card',
+    icon: <CreditCard className="h-6 w-6" />,
+  },
 ];
 
 export function TicketDetails({ ticket, sellerName, buyer }: TicketDetailsProps) {
@@ -81,10 +70,10 @@ export function TicketDetails({ ticket, sellerName, buyer }: TicketDetailsProps)
   const router = useRouter();
   const { toast } = useToast();
   const { firestore } = useFirebase();
+
   const [isPaying, setIsPaying] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string | null>(null);
-
 
   const handlePayment = async (paymentMethod: string) => {
     if (!buyer || !firestore) {
@@ -96,7 +85,7 @@ export function TicketDetails({ ticket, sellerName, buyer }: TicketDetailsProps)
       router.push('/login');
       return;
     }
-    
+
     if (buyer.id === ticket.postedBy) {
       toast({
         variant: 'destructive',
@@ -108,12 +97,10 @@ export function TicketDetails({ ticket, sellerName, buyer }: TicketDetailsProps)
 
     setIsPaying(true);
     setSelectedPaymentMethod(paymentMethod);
-    
-    // Using a timeout to simulate a payment gateway
+
     setTimeout(async () => {
       try {
         const batch = writeBatch(firestore);
-
         const ticketRef = doc(firestore, 'tickets', ticket.id);
         batch.update(ticketRef, { status: 'sold' });
 
@@ -122,13 +109,17 @@ export function TicketDetails({ ticket, sellerName, buyer }: TicketDetailsProps)
           ticketId: ticket.id,
           buyerId: buyer.id,
           sellerId: ticket.postedBy,
-          paymentMethod: paymentMethod,
+          paymentMethod,
           transactionDate: new Date().toISOString(),
           amount: ticket.ticketPrice * ticket.ticketCount,
         };
+
         batch.set(transactionRef, newTransaction);
-        
-        const userPurchasedRef = doc(firestore, `users/${buyer.id}/purchased_tickets/${transactionRef.id}`);
+
+        const userPurchasedRef = doc(
+          firestore,
+          `users/${buyer.id}/purchased_tickets/${transactionRef.id}`
+        );
         batch.set(userPurchasedRef, { ...newTransaction, id: transactionRef.id });
 
         await batch.commit();
@@ -137,15 +128,14 @@ export function TicketDetails({ ticket, sellerName, buyer }: TicketDetailsProps)
           title: 'Payment Successful!',
           description: `You've purchased ${ticket.ticketCount} ticket(s) for ${ticket.movieName}.`,
         });
-        router.push('/profile');
 
+        router.push('/profile');
       } catch (error) {
         console.error('Transaction failed:', error);
         toast({
           variant: 'destructive',
           title: 'Uh oh! Something went wrong.',
-          description:
-            'Could not complete the purchase. Please try again.',
+          description: 'Could not complete the purchase. Please try again.',
         });
       } finally {
         setIsPaying(false);
@@ -166,7 +156,6 @@ export function TicketDetails({ ticket, sellerName, buyer }: TicketDetailsProps)
               fill
               className="object-cover"
               sizes="(max-width: 768px) 100vw, 40vw"
-              data-ai-hint={ticket.imageHint}
             />
             {ticket.status === 'sold' && (
               <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
@@ -186,26 +175,17 @@ export function TicketDetails({ ticket, sellerName, buyer }: TicketDetailsProps)
         >
           {ticket.status}
         </Badge>
+
         <h1 className="font-headline text-4xl md:text-5xl font-bold">
           {ticket.movieName}
         </h1>
-        <p className="mt-2 text-xl text-muted-foreground">
-          {ticket.theaterName}
-        </p>
+        <p className="mt-2 text-xl text-muted-foreground">{ticket.theaterName}</p>
 
         <div className="my-8 border-t border-border/50 pt-8 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-8">
           <InfoItem icon={MapPin} label="Location" value={ticket.location} />
-          <InfoItem
-            icon={Calendar}
-            label="Date"
-            value={format(showDateTime, 'EEE, MMM d, yyyy')}
-          />
+          <InfoItem icon={Calendar} label="Date" value={format(showDateTime, 'EEE, MMM d, yyyy')} />
           <InfoItem icon={Clock} label="Time" value={format(showDateTime, 'p')} />
-          <InfoItem
-            icon={TicketIcon}
-            label="Quantity"
-            value={`${ticket.ticketCount} Ticket(s)`}
-          />
+          <InfoItem icon={TicketIcon} label="Quantity" value={`${ticket.ticketCount} Ticket(s)`} />
           <InfoItem icon={UserIcon} label="Seller" value={sellerName} />
         </div>
 
@@ -216,15 +196,14 @@ export function TicketDetails({ ticket, sellerName, buyer }: TicketDetailsProps)
               ₹{(ticket.ticketPrice * ticket.ticketCount).toFixed(2)}
             </p>
           </CardHeader>
+
           <CardContent>
             <AlertDialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <AlertDialogTrigger asChild>
                 <Button
                   size="lg"
                   className="w-full text-lg"
-                  disabled={
-                    ticket.status === 'sold' || buyer?.id === ticket.postedBy
-                  }
+                  disabled={ticket.status === 'sold' || buyer?.id === ticket.postedBy}
                 >
                   {ticket.status === 'sold'
                     ? 'Sold Out'
@@ -233,20 +212,22 @@ export function TicketDetails({ ticket, sellerName, buyer }: TicketDetailsProps)
                     : 'Buy Ticket'}
                 </Button>
               </AlertDialogTrigger>
+
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle className="font-headline text-2xl">
                     Confirm Purchase
                   </AlertDialogTitle>
                   <AlertDialogDescription>
-                    You are about to purchase {ticket.ticketCount} ticket(s) for{' '}
-                    {ticket.movieName}. Choose a payment method to proceed.
+                    You are about to purchase {ticket.ticketCount} ticket(s) for {ticket.movieName}.
+                    Choose a payment method to proceed.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
+
                 <div className="py-4 space-y-4">
                   <p className="font-semibold">Select Payment Method (Mock)</p>
                   <div className="flex flex-col gap-3">
-                    {paymentMethods.map(method => (
+                    {paymentMethods.map((method) => (
                       <Button
                         key={method.name}
                         variant="outline"
@@ -264,6 +245,7 @@ export function TicketDetails({ ticket, sellerName, buyer }: TicketDetailsProps)
                     ))}
                   </div>
                 </div>
+
                 <AlertDialogFooter>
                   <Button
                     variant="outline"

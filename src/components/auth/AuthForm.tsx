@@ -19,11 +19,13 @@ import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import Link from 'next/link';
-import { useAuth } from '@/firebase';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
+import { useAuth, useFirebase } from '@/firebase';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { FirebaseError } from 'firebase/app';
+import { doc, setDoc } from 'firebase/firestore';
 
 const formSchema = z.object({
+  name: z.string().optional(),
   email: z.string().email({ message: "Please enter a valid email address." }),
   password: z.string().min(6, { message: "Password must be at least 6 characters." }),
 });
@@ -37,10 +39,12 @@ export function AuthForm({ mode }: AuthFormProps) {
   const router = useRouter();
   const { toast } = useToast();
   const auth = useAuth();
+  const { firestore } = useFirebase();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
+      name: "",
       email: "",
       password: "",
     },
@@ -52,7 +56,19 @@ export function AuthForm({ mode }: AuthFormProps) {
         if (mode === 'login') {
           await signInWithEmailAndPassword(auth, values.email, values.password);
         } else {
-          await createUserWithEmailAndPassword(auth, values.email, values.password);
+          const userCredential = await createUserWithEmailAndPassword(auth, values.email, values.password);
+          const user = userCredential.user;
+          const nameToSet = values.name || values.email.split('@')[0];
+          await updateProfile(user, { displayName: nameToSet });
+          
+          if(firestore) {
+            const userRef = doc(firestore, 'users', user.uid);
+            await setDoc(userRef, {
+              id: user.uid,
+              name: nameToSet,
+              email: user.email,
+            }, { merge: true });
+          }
         }
         toast({
           title: mode === 'login' ? "Login Successful" : "Signup Successful",
@@ -96,12 +112,27 @@ export function AuthForm({ mode }: AuthFormProps) {
         <CardDescription>
           {mode === 'login'
             ? "Enter your credentials to access your account."
-            : "Enter your email and password to get started."}
+            : "Enter your details to get started."}
         </CardDescription>
       </CardHeader>
       <CardContent>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            {mode === 'signup' && (
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="John Doe" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
             <FormField
               control={form.control}
               name="email"
