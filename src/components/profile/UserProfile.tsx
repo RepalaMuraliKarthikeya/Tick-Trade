@@ -13,6 +13,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
+import { TicketCard } from '../tickets/TicketCard';
 
 type UserProfileProps = {
   user: User;
