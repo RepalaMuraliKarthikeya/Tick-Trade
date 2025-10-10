@@ -22,7 +22,6 @@ export default function TicketDetailsPage({ params }: { params: { id: string } }
   const { data: ticket, isLoading: isTicketLoading, error: ticketError } = useDoc<Omit<Ticket, 'id'>>(ticketRef);
 
   const sellerRef = useMemoFirebase(() => {
-    // We wait until the ticket is loaded to fetch the seller
     if (!firestore || !ticket?.postedBy) return null;
     return doc(firestore, 'users', ticket.postedBy);
   }, [firestore, ticket]);
@@ -35,19 +34,16 @@ export default function TicketDetailsPage({ params }: { params: { id: string } }
     }
   }, [ticketError]);
 
-  // Combined loading state: show skeleton if ticket is loading OR if the ticket has loaded but the seller is now loading.
   const isLoading = isTicketLoading || (ticket && isSellerLoading);
 
   if (isLoading) {
     return <TicketDetailsSkeleton />;
   }
 
-  // AFTER loading, if there's no ticket, then it's a 404.
   if (!ticket) {
     notFound();
   }
 
-  // By this point, the ticket exists.
   const ticketWithId: Ticket = { ...ticket, id: id };
   const currentBuyer = user ? { id: user.uid, name: user.displayName, email: user.email } : null;
 
