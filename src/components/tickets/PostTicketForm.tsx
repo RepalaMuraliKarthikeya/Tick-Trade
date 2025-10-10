@@ -14,7 +14,7 @@ import {
   FormDescription,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { Loader2, Calendar as CalendarIcon } from 'lucide-react';
@@ -25,7 +25,7 @@ import { format } from "date-fns";
 import { useFirebase } from '@/firebase';
 import { addDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { collection } from 'firebase/firestore';
-import posterData from '@/lib/posters.json';
+import { generateMoviePoster } from '@/ai/flows/generate-poster-flow';
 
 const postTicketSchema = z.object({
   movieName: z.string().min(1, "Movie name is required"),
@@ -35,20 +35,14 @@ const postTicketSchema = z.object({
   showTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, "Invalid time format. Use 24-hour format (e.g., 19:30)."),
   ticketCount: z.coerce.number().int().min(1, "At least one ticket is required"),
   price: z.coerce.number().min(0, "Price cannot be negative"),
-  imageUrl: z.string().url("Please enter a valid image URL").optional(),
 });
-
-// Get a random poster from the list
-const getRandomPoster = () => {
-    const randomIndex = Math.floor(Math.random() * posterData.posters.length);
-    return posterData.posters[randomIndex];
-};
 
 export function PostTicketForm() {
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const { toast } = useToast();
   const { firestore, user } = useFirebase();
+  const [isGeneratingPoster, setIsGeneratingPoster] = useState(false);
 
   const form = useForm<z.infer<typeof postTicketSchema>>({
     resolver: zodResolver(postTicketSchema),
@@ -59,11 +53,10 @@ export function PostTicketForm() {
       showTime: "20:00",
       ticketCount: 1,
       price: 15.00,
-      imageUrl: getRandomPoster(),
     },
   });
 
-  function onSubmit(values: z.infer<typeof postTicketSchema>) {
+  async function onSubmit(values: z.infer<typeof postTicketSchema>) {
     if (!user) {
       toast({
         variant: "destructive",
@@ -83,8 +76,31 @@ export function PostTicketForm() {
         return;
     }
 
-
     startTransition(async () => {
+      setIsGeneratingPoster(true);
+      let posterUrl = "https://picsum.photos/seed/default-movie/400/600";
+      try {
+        const result = await generateMoviePoster({ movieName: values.movieName });
+        if (result.posterUrl) {
+          posterUrl = result.posterUrl;
+        } else {
+          toast({
+            variant: "destructive",
+            title: "Poster Generation Failed",
+            description: "Could not generate a poster. A default will be used.",
+          });
+        }
+      } catch (error) {
+        console.error("Error generating poster:", error);
+        toast({
+          variant: "destructive",
+          title: "Poster Generation Error",
+          description: "An error occurred while generating the movie poster. A default image will be used.",
+        });
+      } finally {
+        setIsGeneratingPoster(false);
+      }
+      
       const dateTime = new Date(values.showDate);
       const [hours, minutes] = values.showTime.split(':');
       dateTime.setHours(parseInt(hours, 10));
@@ -97,9 +113,10 @@ export function PostTicketForm() {
         dateTime: dateTime.toISOString(),
         ticketCount: values.ticketCount,
         ticketPrice: values.price,
-        posterImageUrl: values.imageUrl || "https://picsum.photos/seed/default-movie/400/600",
+        posterImageUrl: posterUrl,
         postedBy: user.uid,
         status: 'available' as 'available' | 'sold',
+        imageHint: `${values.movieName} movie poster`
       };
       
       const ticketsCollection = collection(firestore, 'tickets');
@@ -112,6 +129,8 @@ export function PostTicketForm() {
       router.push('/');
     });
   }
+
+  const isSubmitDisabled = isPending || isGeneratingPoster || !user;
 
   return (
     <Form {...form}>
@@ -183,21 +202,10 @@ export function PostTicketForm() {
             </FormItem>
           )} />
         </div>
-        
-        <FormField control={form.control} name="imageUrl" render={({ field }) => (
-          <FormItem>
-            <FormLabel>Ticket / Poster Image URL</FormLabel>
-            <FormControl>
-                <Input placeholder="https://example.com/poster.jpg" {...field} />
-            </FormControl>
-            <FormDescription>Provide a URL for the ticket or movie poster. It defaults to a random one.</FormDescription>
-            <FormMessage />
-          </FormItem>
-        )} />
 
-        <Button type="submit" className="w-full bg-accent text-accent-foreground hover:bg-accent/90" disabled={isPending || !user}>
-          {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {user ? 'Post Ticket' : 'Login to Post'}
+        <Button type="submit" className="w-full bg-accent text-accent-foreground hover:bg-accent/90" disabled={isSubmitDisabled}>
+          {(isPending || isGeneratingPoster) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {!user ? 'Login to Post' : isGeneratingPoster ? 'Generating Poster...' : 'Post Ticket'}
         </Button>
       </form>
     </Form>
