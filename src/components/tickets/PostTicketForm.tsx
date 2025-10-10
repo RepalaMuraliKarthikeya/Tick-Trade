@@ -25,6 +25,7 @@ import { format } from "date-fns";
 import { useFirebase } from '@/firebase';
 import { addDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { collection } from 'firebase/firestore';
+import posterData from '@/lib/posters.json';
 
 const postTicketSchema = z.object({
   movieName: z.string().min(1, "Movie name is required"),
@@ -36,6 +37,12 @@ const postTicketSchema = z.object({
   price: z.coerce.number().min(0, "Price cannot be negative"),
   imageUrl: z.string().url("Please enter a valid image URL").optional(),
 });
+
+// Get a random poster from the list
+const getRandomPoster = () => {
+    const randomIndex = Math.floor(Math.random() * posterData.posters.length);
+    return posterData.posters[randomIndex];
+};
 
 export function PostTicketForm() {
   const [isPending, startTransition] = useTransition();
@@ -52,7 +59,7 @@ export function PostTicketForm() {
       showTime: "20:00",
       ticketCount: 1,
       price: 15.00,
-      imageUrl: "https://picsum.photos/seed/movieticket/400/600",
+      imageUrl: getRandomPoster(),
     },
   });
 
@@ -183,7 +190,7 @@ export function PostTicketForm() {
             <FormControl>
                 <Input placeholder="https://example.com/poster.jpg" {...field} />
             </FormControl>
-            <FormDescription>Provide a URL for the ticket or movie poster.</FormDescription>
+            <FormDescription>Provide a URL for the ticket or movie poster. It defaults to a random one.</FormDescription>
             <FormMessage />
           </FormItem>
         )} />
