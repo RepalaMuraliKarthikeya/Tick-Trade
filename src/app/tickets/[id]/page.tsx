@@ -9,8 +9,7 @@ import { useMemoFirebase } from '@/firebase/provider';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useEffect } from 'react';
 
-export default function TicketDetailsPage({ params }: { params: { id: string } }) {
-  const { id } = params;
+export default function TicketDetailsPage({ params: { id } }: { params: { id: string } }) {
   const firestore = useFirestore();
   const { user } = useUser();
 
@@ -34,12 +33,11 @@ export default function TicketDetailsPage({ params }: { params: { id: string } }
     }
   }, [ticketError]);
 
-  const isLoading = isTicketLoading || (ticket && isSellerLoading);
-
-  if (isLoading) {
+  if (isTicketLoading || (ticket && isSellerLoading)) {
     return <TicketDetailsSkeleton />;
   }
 
+  // Only call notFound if loading is complete and ticket is still not found.
   if (!ticket) {
     notFound();
   }
