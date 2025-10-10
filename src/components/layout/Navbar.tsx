@@ -7,10 +7,11 @@ import { Logo } from '@/components/Logo';
 import { Button } from '@/components/ui/button';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { useAuth, useUser } from '@/firebase';
+import { useAuth, useFirebase, useUser } from '@/firebase';
 import { signOut } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '../ui/skeleton';
+import { logUserActivity } from '@/lib/activity-logger';
 
 const navLinks = [
   { href: '/', label: 'Home', icon: Home },
@@ -23,10 +24,19 @@ export function Navbar() {
   const pathname = usePathname();
   const { user, isUserLoading } = useUser();
   const auth = useAuth();
+  const { firestore } = useFirebase();
   const { toast } = useToast();
 
   const handleLogout = async () => {
+    if (!user || !firestore) {
+      toast({ variant: 'destructive', title: 'Logout failed', description: 'Could not log you out. Please try again.' });
+      return;
+    }
+    
     try {
+      // It's important to capture the userId before signing out
+      const userId = user.uid;
+      await logUserActivity(firestore, userId, 'logout');
       await signOut(auth);
       toast({ title: 'Logged out successfully' });
     } catch (error) {

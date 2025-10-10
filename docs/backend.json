@@ -146,6 +146,35 @@
         "transactionDate",
         "amount"
       ]
+    },
+    "UserActivityLog": {
+      "title": "User Activity Log",
+      "type": "object",
+      "description": "Records user activities like login and logout events.",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "The ID of the user performing the action."
+        },
+        "action": {
+          "type": "string",
+          "description": "The type of action performed.",
+          "enum": [
+            "login",
+            "logout"
+          ]
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "The ISO 8601 timestamp of when the action occurred.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "userId",
+        "action",
+        "timestamp"
+      ]
     }
   },
   "auth": {
@@ -243,8 +272,28 @@
             }
           ]
         }
+      },
+      {
+        "path": "users/{userId}/activity_logs/{logId}",
+        "definition": {
+          "entityName": "UserActivityLog",
+          "schema": {
+            "$ref": "#/backend/entities/UserActivityLog"
+          },
+          "description": "Stores activity logs for a specific user.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user."
+            },
+            {
+              "name": "logId",
+              "description": "The unique identifier of the activity log."
+            }
+          ]
+        }
       }
     ],
-    "reasoning": "The Firestore structure is designed to support the MovieRush application, prioritizing security, scalability, and ease of debugging. It leverages path-based ownership for user-specific data and denormalization to avoid complex security rules. Here's a breakdown:\n\n*   **Users Collection:** Stores user profiles.\n*   **Tickets Collection:**  Maintains a collection of all available tickets.  The `postedBy` field stores the user ID of the ticket poster. This collection supports the primary feature of listing available tickets.\n*   **Users/{userId}/posted_tickets Collection:** Subcollection under each user to store tickets posted by them. This enforces clear ownership and allows easy retrieval of tickets posted by a specific user. The `postedBy` field is copied here to ensure authorization independence, avoiding `get()` calls in security rules.\n*   **Users/{userId}/purchased_tickets Collection:**  Subcollection under each user to store tickets purchased by them, ensuring clear ownership and easy retrieval. The `buyerId` is copied here to ensure authorization independence.\n*   **Transactions Collection:** Records all transaction details. The `buyerId` and `sellerId` are explicitly stored for audit and reporting.\n\n**Authorization Independence:** The design uses denormalization to avoid `get()` calls in security rules. For example:\n\n*   The `postedBy` field is duplicated in `tickets` and `users/{userId}/posted_tickets`.\n*   The `buyerId` is duplicated in `transactions` and `users/{userId}/purchased_tickets`.\n\n**QAPs (Rules are not Filters):**\n\n*   The segregation of `posted_tickets` and `purchased_tickets` into user subcollections allows secure listing of tickets owned or bought by a specific user using path-based rules, without the need to filter based on document content.\n\nThis structure enables simple and robust security rules based on `request.auth.uid` and avoids complex nested `get()` calls, leading to better performance and maintainability."
+    "reasoning": "The Firestore structure is designed to support the MovieRush application, prioritizing security, scalability, and ease of debugging. It leverages path-based ownership for user-specific data and denormalization to avoid complex security rules. Here's a breakdown:\n\n*   **Users Collection:** Stores user profiles.\n*   **Tickets Collection:**  Maintains a collection of all available tickets.  The `postedBy` field stores the user ID of the ticket poster. This collection supports the primary feature of listing available tickets.\n*   **Users/{userId}/posted_tickets Collection:** Subcollection under each user to store tickets posted by them. This enforces clear ownership and allows easy retrieval of tickets posted by a specific user. The `postedBy` field is copied here to ensure authorization independence, avoiding `get()` calls in security rules.\n*   **Users/{userId}/purchased_tickets Collection:**  Subcollection under each user to store tickets purchased by them, ensuring clear ownership and easy retrieval. The `buyerId` is copied here to ensure authorization independence.\n*   **Transactions Collection:** Records all transaction details. The `buyerId` and `sellerId` are explicitly stored for audit and reporting.\n*   **Users/{userId}/activity_logs Collection:** Subcollection under each user to store logs of their activity, such as logins and logouts.\n\n**Authorization Independence:** The design uses denormalization to avoid `get()` calls in security rules. For example:\n\n*   The `postedBy` field is duplicated in `tickets` and `users/{userId}/posted_tickets`.\n*   The `buyerId` is duplicated in `transactions` and `users/{userId}/purchased_tickets`.\n\n**QAPs (Rules are not Filters):**\n\n*   The segregation of `posted_tickets`, `purchased_tickets`, and `activity_logs` into user subcollections allows secure listing of data owned by a specific user using path-based rules, without the need to filter based on document content.\n\nThis structure enables simple and robust security rules based on `request.auth.uid` and avoids complex nested `get()` calls, leading to better performance and maintainability."
   }
 }

@@ -23,6 +23,7 @@ import { useAuth, useFirebase } from '@/firebase';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { FirebaseError } from 'firebase/app';
 import { doc, setDoc } from 'firebase/firestore';
+import { logUserActivity } from '@/lib/activity-logger';
 
 const formSchema = z.object({
   name: z.string().optional(),
@@ -53,10 +54,11 @@ export function AuthForm({ mode }: AuthFormProps) {
   async function onSubmit(values: z.infer<typeof formSchema>) {
     startTransition(async () => {
       try {
+        let userCredential;
         if (mode === 'login') {
-          await signInWithEmailAndPassword(auth, values.email, values.password);
+          userCredential = await signInWithEmailAndPassword(auth, values.email, values.password);
         } else {
-          const userCredential = await createUserWithEmailAndPassword(auth, values.email, values.password);
+          userCredential = await createUserWithEmailAndPassword(auth, values.email, values.password);
           const user = userCredential.user;
           const nameToSet = values.name || values.email.split('@')[0];
           await updateProfile(user, { displayName: nameToSet });
@@ -70,6 +72,12 @@ export function AuthForm({ mode }: AuthFormProps) {
             }, { merge: true });
           }
         }
+        
+        const user = userCredential.user;
+        if (firestore && user) {
+          await logUserActivity(firestore, user.uid, 'login');
+        }
+
         toast({
           title: mode === 'login' ? "Login Successful" : "Signup Successful",
           description: "Welcome to MovieRush! Redirecting...",
