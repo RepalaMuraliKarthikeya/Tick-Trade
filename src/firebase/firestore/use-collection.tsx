@@ -69,7 +69,7 @@ export function useCollection<T = any>(
       setError(null);
       return;
     }
-    
+
     setIsLoading(true);
     setError(null);
 
