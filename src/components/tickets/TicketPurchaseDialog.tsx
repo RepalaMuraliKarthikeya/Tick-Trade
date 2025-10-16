@@ -19,7 +19,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { useFirebase } from '@/firebase';
+import { useFirebase, errorEmitter, FirestorePermissionError } from '@/firebase';
 import { doc, collection, writeBatch } from 'firebase/firestore';
 
 type TicketPurchaseDialogProps = {
@@ -89,10 +89,11 @@ export function TicketPurchaseDialog({ ticket, buyer, children }: TicketPurchase
     setSelectedPaymentMethod(paymentMethod);
 
     setTimeout(async () => {
-      try {
         const batch = writeBatch(firestore);
+        
         const ticketRef = doc(firestore, 'tickets', ticket.id);
-        batch.update(ticketRef, { status: 'sold' });
+        const ticketUpdateData = { status: 'sold' };
+        batch.update(ticketRef, ticketUpdateData);
 
         const transactionRef = doc(collection(firestore, 'transactions'));
         const newTransaction: Omit<Transaction, 'id'> = {
@@ -103,35 +104,46 @@ export function TicketPurchaseDialog({ ticket, buyer, children }: TicketPurchase
           transactionDate: new Date().toISOString(),
           amount: ticket.ticketPrice * ticket.ticketCount,
         };
-
         batch.set(transactionRef, newTransaction);
 
         const userPurchasedRef = doc(
           firestore,
           `users/${buyer.id}/purchased_tickets/${transactionRef.id}`
         );
-        batch.set(userPurchasedRef, { ...newTransaction, id: transactionRef.id });
+        const userPurchasedData = { ...newTransaction, id: transactionRef.id };
+        batch.set(userPurchasedRef, userPurchasedData);
 
-        await batch.commit();
-
-        toast({
-          title: 'Payment Successful!',
-          description: `You've purchased ${ticket.ticketCount} ticket(s) for ${ticket.movieName}.`,
-        });
-
-        router.refresh(); // Refresh the page to show the updated ticket status
-      } catch (error) {
-        console.error('Transaction failed:', error);
-        toast({
-          variant: 'destructive',
-          title: 'Uh oh! Something went wrong.',
-          description: 'Could not complete the purchase. Please try again.',
-        });
-      } finally {
-        setIsPaying(false);
-        setIsDialogOpen(false);
-        setSelectedPaymentMethod(null);
-      }
+        batch.commit()
+          .then(() => {
+            toast({
+              title: 'Payment Successful!',
+              description: `You've purchased ${ticket.ticketCount} ticket(s) for ${ticket.movieName}.`,
+            });
+            router.refresh();
+          })
+          .catch((error) => {
+             // We can't know which write failed, so we'll report the most likely ones
+            errorEmitter.emit('permission-error', new FirestorePermissionError({
+                path: ticketRef.path,
+                operation: 'update',
+                requestResourceData: ticketUpdateData
+            }));
+            errorEmitter.emit('permission-error', new FirestorePermissionError({
+                path: transactionRef.path,
+                operation: 'create',
+                requestResourceData: newTransaction
+            }));
+            errorEmitter.emit('permission-error', new FirestorePermissionError({
+                path: userPurchasedRef.path,
+                operation: 'create',
+                requestResourceData: userPurchasedData
+            }));
+          })
+          .finally(() => {
+            setIsPaying(false);
+            setIsDialogOpen(false);
+            setSelectedPaymentMethod(null);
+          });
     }, 2000);
   };
   
