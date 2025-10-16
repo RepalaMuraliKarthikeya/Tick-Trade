@@ -39,16 +39,17 @@ export default function ProfilePage() {
   const fetchPurchasedTickets = useCallback(async () => {
     if (user && firestore) {
       setIsLoadingPurchased(true);
-      // This part is for the dummy flow, we will assume no tickets are purchased initially from DB
-      // In a real scenario, we would fetch from `users/${user.uid}/purchased_tickets`
+      // In our dummy flow, we start with an empty list of purchased tickets.
+      // In a real scenario with a working backend, you'd fetch this from Firestore.
       setPurchasedTickets([]);
       setIsLoadingPurchased(false);
     }
   }, [user, firestore]);
   
   const handlePurchaseSuccess = useCallback((newlyPurchasedTicket: Ticket) => {
-    // Add to purchased tickets list if it's not already there
+    // Add the ticket to the 'purchased' list.
     setPurchasedTickets(prev => {
+        // Avoid adding duplicates if the event fires multiple times
         const ticketExists = prev.some(t => t.id === newlyPurchasedTicket.id);
         if (!ticketExists) {
             return [...prev, newlyPurchasedTicket];
@@ -56,7 +57,7 @@ export default function ProfilePage() {
         return prev;
     });
 
-    // Remove from posted tickets list
+    // Remove the ticket from the 'posted' list, as it's now sold.
     setPostedTickets(prev => prev.filter(t => t.id !== newlyPurchasedTicket.id));
   }, []);
 
