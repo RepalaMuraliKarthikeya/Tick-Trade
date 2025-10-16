@@ -17,13 +17,13 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useTransition, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth, useFirebase, useUser } from '@/firebase';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { FirebaseError } from 'firebase/app';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
 import { logUserActivity } from '@/lib/activity-logger';
 import { initiateEmailSignIn } from '@/firebase/non-blocking-login';
 import { setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
@@ -41,6 +41,7 @@ type AuthFormProps = {
 export function AuthForm({ mode }: AuthFormProps) {
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
+  const pathname = usePathname();
   const { toast } = useToast();
   const auth = useAuth();
   const { firestore } = useFirebase();
@@ -128,7 +129,6 @@ export function AuthForm({ mode }: AuthFormProps) {
   }
 
   // Effect to handle post-login actions for login mode
-  const pathname = usePathname();
   useEffect(() => {
     if (mode === 'login' && !isUserLoading && user && firestore) {
       if (pathname === '/login') { // Only act when on the login page
@@ -236,13 +236,3 @@ export function AuthForm({ mode }: AuthFormProps) {
     </Card>
   );
 }
-
-// Add this to avoid undefined error
-function usePathname() {
-  if (typeof window !== 'undefined') {
-    return window.location.pathname;
-  }
-  return '';
-}
-
-    
