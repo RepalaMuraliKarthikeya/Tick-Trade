@@ -1,183 +1,168 @@
 /**
- * @fileOverview Firestore Security Rules for MovieRush.
+ * @fileoverview Firestore Security Rules for MovieRush.
  *
  * Core Philosophy:
- * This ruleset enforces a strict user-ownership model for user-specific data while allowing public read access to tickets.
- * Data is denormalized to avoid costly `get()` calls within rules.
+ * This ruleset enforces a strict user-ownership model for private data (posted tickets, purchased tickets, and activity logs).
+ * Publicly listable tickets are available in the top-level 'tickets' collection, with ownership enforced for modifications.
  *
  * Data Structure:
- * - /users/{userId}: Stores user profiles, accessible only to the user themselves.
- * - /tickets/{ticketId}: Stores all tickets, publicly readable, but writable only by the owner.
- * - /users/{userId}/posted_tickets/{ticketId}: Stores tickets posted by a specific user, accessible only to that user.  The `postedBy` field is copied here to ensure authorization independence, avoiding `get()` calls in security rules.
- * - /users/{userId}/purchased_tickets/{transactionId}: Stores transactions for tickets purchased by a user, accessible only to that user. The `buyerId` is copied here to ensure authorization independence.
+ * - /users/{userId}: Stores user profiles; userId must match authenticated user ID for writes.
+ * - /tickets/{ticketId}: Stores publicly listable tickets with owner-only write access.
+ * - /users/{userId}/posted_tickets/{ticketId}: Stores tickets posted by a specific user.
+ * - /users/{userId}/purchased_tickets/{transactionId}: Stores transactions for tickets purchased by a specific user.
  * - /transactions/{transactionId}: Stores all transaction records.
- * - /users/{userId}/activity_logs/{logId}: Stores activity logs for a specific user, accessible only to that user.
+ * - /users/{userId}/activity_logs/{logId}: Stores activity logs for a specific user.
  *
  * Key Security Decisions:
- * - Users can only read and write their own profiles and activity logs.
- * - Public read access to the tickets collection to allow for open ticket listings.
- * - Tickets can only be created, updated, or deleted by the user who posted them.
- * - Data denormalization is used to simplify security rules and improve performance, specifically avoiding the need for `get()` calls.
+ * - Users can only read/write their own profile data.
+ * - Public listing of tickets is allowed, but only the owner can modify or delete them.
+ * - Users can only manage (create, update, delete) tickets they have posted.
+ * - Users can only view their own purchased ticket history.
+ * - Users cannot list all activity logs, only their own.
+ * - All write operations require a verified user identity (request.auth != null).
  *
  * Denormalization for Authorization:
- * - The `postedBy` field is duplicated in `tickets` and `users/{userId}/posted_tickets`.
- * - The `buyerId` is duplicated in `transactions` and `users/{userId}/purchased_tickets`.
+ * - The `postedBy` field is denormalized in both `/tickets/{ticketId}` and `/users/{userId}/posted_tickets/{ticketId}` to allow authorization without extra reads.
+ * - The `buyerId` field is denormalized in both `/transactions/{transactionId}` and `/users/{userId}/purchased_tickets/{transactionId}` to allow authorization without extra reads.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Checks if the request is authenticated.
-     * @returns {boolean} True if the request is authenticated, false otherwise.
+     * @description Checks if the user is signed in.
+     * @path N/A
+     * @allow N/A
+     * @deny N/A
+     * @principle Authentication check.
      */
     function isSignedIn() {
       return request.auth != null;
     }
 
     /**
-     * @description Checks if the authenticated user ID matches the provided user ID.
-     * @param {string} userId The user ID to compare against.
-     * @returns {boolean} True if the user is signed in and the UID matches, false otherwise.
+     * @description Checks if the user ID matches the authenticated user ID.
+     * @path N/A
+     * @allow N/A
+     * @deny N/A
+     * @principle Enforces user ownership.
      */
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
     /**
-     * @description Checks if the authenticated user is the existing owner of the document.
-     * @param {string} userId The user ID to compare against.
-     * @returns {boolean} True if the user is signed in, the UID matches, and the document exists, false otherwise.
+     * @description Checks if the user ID matches the authenticated user ID, and the resource exists
+     * @path N/A
+     * @allow N/A
+     * @deny N/A
+     * @principle Enforces user ownership and resource existence for destructive operations.
      */
     function isExistingOwner(userId) {
       return isOwner(userId) && resource != null;
     }
 
     /**
-     * @description Rules for the /users/{userId} collection.
+     * @description Rule for user profiles.
      * @path /users/{userId}
-     * @allow (create) User 'arya' with id 'arya-id' can create their own profile if request.auth.uid == 'arya-id'.
-     * @allow (get) User 'arya' with id 'arya-id' can read their own profile if request.auth.uid == 'arya-id'.
-     * @allow (update) User 'arya' with id 'arya-id' can update their profile if request.auth.uid == 'arya-id'.
-     * @allow (delete) User 'arya' with id 'arya-id' can delete their own profile if request.auth.uid == 'arya-id'.
-     * @deny (create) User 'john' with id 'john-id' cannot create a profile for 'arya' with id 'arya-id'.
-     * @deny (get) User 'john' with id 'john-id' cannot read profile of 'arya' with id 'arya-id'.
-     * @deny (update) User 'john' with id 'john-id' cannot update profile of 'arya' with id 'arya-id'.
-     * @deny (delete) User 'john' with id 'john-id' cannot delete profile of 'arya' with id 'arya-id'.
+     * @allow (create) User with ID 'user123' creates their profile with matching userId.
+     * @allow (get, update, delete) Authenticated user 'user123' reads/modifies their own profile.
+     * @deny (create) User with ID 'user456' attempts to create a profile with userId 'user123'.
+     * @deny (get, update, delete) Authenticated user 'user456' attempts to read/modify profile 'user123'.
      * @principle Enforces document ownership for writes.
      */
     match /users/{userId} {
       allow get: if isOwner(userId);
       allow list: if false;
-      allow create: if isOwner(userId);
-      allow update: if isExistingOwner(userId);
+      allow create: if isOwner(userId) && request.resource.data.id == userId;
+      allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
       allow delete: if isExistingOwner(userId);
     }
 
     /**
-     * @description Rules for the /tickets/{ticketId} collection.
+     * @description Rule for publicly listable tickets.
      * @path /tickets/{ticketId}
-     * @allow (get) Any user can read any ticket.
-     * @allow (list) Any user can list all tickets.
-     * @allow (create) User 'arya' with id 'arya-id' can create a ticket if request.resource.data.postedBy == 'arya-id'.
-     * @allow (update) User 'arya' with id 'arya-id' can update a ticket if resource.data.postedBy == 'arya-id'.
-     * @allow (delete) User 'arya' with id 'arya-id' can delete a ticket if resource.data.postedBy == 'arya-id'.
-     * @deny (create) User 'john' with id 'john-id' cannot create a ticket for 'arya' with id 'arya-id'.
-     * @deny (update) User 'john' with id 'john-id' cannot update ticket of 'arya' with id 'arya-id'.
-     * @deny (delete) User 'john' with id 'john-id' cannot delete ticket of 'arya' with id 'arya-id'.
-     * @principle Allows public read access but enforces ownership for writes.
+     * @allow (get, list) Any user can read and list available tickets.
+     * @allow (create) Authenticated user creates a ticket with postedBy matching their userId.
+     * @allow (update, delete) Authenticated user updates/deletes a ticket where postedBy matches their userId.
+     * @deny (create) Authenticated user creates a ticket with postedBy not matching their userId.
+     * @deny (update, delete) Authenticated user updates/deletes a ticket where postedBy does not match their userId.
+     * @principle Allows public read access with owner-only writes; validates creatorId on creation.
      */
     match /tickets/{ticketId} {
-      allow get: if true;
-      allow list: if true;
+      allow get, list: if true;
       allow create: if isSignedIn() && request.resource.data.postedBy == request.auth.uid;
-      allow update: if isExistingOwner(resource.data.postedBy);
-      allow delete: if isExistingOwner(resource.data.postedBy);
+      allow update: if isSignedIn() && resource != null && resource.data.postedBy == request.auth.uid;
+      allow delete: if isSignedIn() && resource != null && resource.data.postedBy == request.auth.uid;
     }
 
     /**
-     * @description Rules for the /users/{userId}/posted_tickets/{ticketId} collection.
+     * @description Rule for tickets posted by a specific user.
      * @path /users/{userId}/posted_tickets/{ticketId}
-     * @allow (create) User 'arya' with id 'arya-id' can create a ticket in their posted_tickets collection if request.resource.data.postedBy == 'arya-id' and userId == 'arya-id'.
-     * @allow (get) User 'arya' with id 'arya-id' can read a ticket in their posted_tickets collection if userId == 'arya-id'.
-     * @allow (list) User 'arya' with id 'arya-id' can list tickets in their posted_tickets collection if userId == 'arya-id'.
-     * @allow (update) User 'arya' with id 'arya-id' can update a ticket in their posted_tickets collection if resource.data.postedBy == 'arya-id' and userId == 'arya-id'.
-     * @allow (delete) User 'arya' with id 'arya-id' can delete a ticket in their posted_tickets collection if resource.data.postedBy == 'arya-id' and userId == 'arya-id'.
-     * @deny (create) User 'john' with id 'john-id' cannot create a ticket in 'arya's posted_tickets collection.
-     * @deny (get) User 'john' with id 'john-id' cannot read a ticket in 'arya's posted_tickets collection.
-     * @deny (list) User 'john' with id 'john-id' cannot list tickets in 'arya's posted_tickets collection.
-     * @deny (update) User 'john' with id 'john-id' cannot update a ticket in 'arya's posted_tickets collection.
-     * @deny (delete) User 'john' with id 'john-id' cannot delete a ticket in 'arya's posted_tickets collection.
-     * @principle Restricts access to a user's own posted tickets.
+     * @allow (get, list) Authenticated user 'user123' reads/lists tickets they posted.
+     * @allow (create) Authenticated user 'user123' creates a ticket under their ID with matching postedBy.
+     * @allow (update, delete) Authenticated user 'user123' updates/deletes a ticket under their ID with matching postedBy.
+     * @deny (create) Authenticated user 'user123' creates a ticket under their ID with postedBy not matching their ID.
+     * @deny (get, list, update, delete) Authenticated user 'user456' attempts to access 'user123' posted tickets.
+     * @principle Enforces user-specific data access; validates creatorId on creation.
      */
     match /users/{userId}/posted_tickets/{ticketId} {
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
-      allow create: if isOwner(userId) && request.resource.data.postedBy == userId;
-      allow update: if isExistingOwner(userId) && resource.data.postedBy == userId;
-      allow delete: if isExistingOwner(userId) && resource.data.postedBy == userId;
+      allow get, list: if isOwner(userId);
+      allow create: if isOwner(userId) && request.resource.data.postedBy == request.auth.uid;
+      allow update: if isExistingOwner(userId) && request.resource.data.postedBy == request.auth.uid;
+      allow delete: if isExistingOwner(userId);
     }
 
     /**
-     * @description Rules for the /users/{userId}/purchased_tickets/{transactionId} collection.
+     * @description Rule for tickets purchased by a specific user.
      * @path /users/{userId}/purchased_tickets/{transactionId}
-     * @allow (create) User 'arya' with id 'arya-id' can create a transaction in their purchased_tickets collection if request.resource.data.buyerId == 'arya-id' and userId == 'arya-id'.
-     * @allow (get) User 'arya' with id 'arya-id' can read a transaction in their purchased_tickets collection if userId == 'arya-id'.
-     * @allow (list) User 'arya' with id 'arya-id' can list transactions in their purchased_tickets collection if userId == 'arya-id'.
-     * @allow (update) User 'arya' with id 'arya-id' can update a transaction in their purchased_tickets collection if resource.data.buyerId == 'arya-id' and userId == 'arya-id'.
-     * @allow (delete) User 'arya' with id 'arya-id' can delete a transaction in their purchased_tickets collection if resource.data.buyerId == 'arya-id' and userId == 'arya-id'.
-     * @deny (create) User 'john' with id 'john-id' cannot create a transaction in 'arya's purchased_tickets collection.
-     * @deny (get) User 'john' with id 'john-id' cannot read a transaction in 'arya's purchased_tickets collection.
-     * @deny (list) User 'john' with id 'john-id' cannot list transactions in 'arya's purchased_tickets collection.
-     * @deny (update) User 'john' with id 'john-id' cannot update a transaction in 'arya's purchased_tickets collection.
-     * @deny (delete) User 'john' with id 'john-id' cannot delete a transaction in 'arya's purchased_tickets collection.
-     * @principle Restricts access to a user's own purchased tickets.
+     * @allow (get, list) Authenticated user 'user123' reads/lists their purchased tickets.
+     * @allow (create) Authenticated user 'user123' creates a purchase record under their ID with matching buyerId.
+     * @allow (update, delete) Authenticated user 'user123' updates/deletes a purchase record under their ID with matching buyerId.
+     * @deny (create) Authenticated user 'user123' creates a purchase record under their ID with buyerId not matching their ID.
+     * @deny (get, list, update, delete) Authenticated user 'user456' attempts to access 'user123' purchase history.
+     * @principle Enforces user-specific data access; validates creatorId on creation.
      */
     match /users/{userId}/purchased_tickets/{transactionId} {
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
-      allow create: if isOwner(userId) && request.resource.data.buyerId == userId;
-      allow update: if isExistingOwner(userId) && resource.data.buyerId == userId;
-      allow delete: if isExistingOwner(userId) && resource.data.buyerId == userId;
+      allow get, list: if isOwner(userId);
+      allow create: if isOwner(userId) && request.resource.data.buyerId == request.auth.uid;
+      allow update: if isExistingOwner(userId) && request.resource.data.buyerId == request.auth.uid;
+      allow delete: if isExistingOwner(userId);
     }
 
     /**
-     * @description Rules for the /transactions/{transactionId} collection.
+     * @description Rule for all transaction records.
      * @path /transactions/{transactionId}
-     * @allow (get) Any user can read any transaction.
-     * @allow (list) Any user can list all transactions.
-     * @allow (create) Any authenticated user can create a transaction.
-     * @allow (update) No user can update any transaction.
-     * @allow (delete) No user can delete any transaction.
+     * @allow get: if false;
+     * @allow list: if false;
+     * @allow create: if false; // TODO: The IR doesn't describe which role/identities should be allowed to create transactions.
+     * @allow update: if false; // TODO: The IR doesn't describe which role/identities should be allowed to update transactions.
+     * @allow delete: if false; // TODO: The IR doesn't describe which role/identities should be allowed to delete transactions.
+     * @principle Restricts access to all transactions.
      */
     match /transactions/{transactionId} {
-      allow get: if true;
-      allow list: if true;
-      allow create: if isSignedIn();
-      allow update: if false;
-      allow delete: if false;
+        allow get: if false;
+        allow list: if false;
+        allow create: if false;  // TODO: Add validation once roles are implemented.
+        allow update: if false;  // TODO: Add validation once roles are implemented.
+        allow delete: if false;  // TODO: Add validation once roles are implemented.
     }
 
     /**
-     * @description Rules for the /users/{userId}/activity_logs/{logId} collection.
+     * @description Rule for activity logs for a specific user.
      * @path /users/{userId}/activity_logs/{logId}
-     * @allow (create) User 'arya' with id 'arya-id' can create an activity log in their activity_logs collection if userId == 'arya-id'.
-     * @allow (get) User 'arya' with id 'arya-id' can read an activity log in their activity_logs collection if userId == 'arya-id'.
-     * @allow (list) User 'arya' with id 'arya-id' can list activity logs in their activity_logs collection if userId == 'arya-id'.
-     * @allow (update) User 'arya' with id 'arya-id' can update an activity log in their activity_logs collection if userId == 'arya-id'.
-     * @allow (delete) User 'arya' with id 'arya-id' can delete an activity log in their activity_logs collection if userId == 'arya-id'.
-     * @deny (create) User 'john' with id 'john-id' cannot create an activity log in 'arya's activity_logs collection.
-     * @deny (get) User 'john' with id 'john-id' cannot read an activity log in 'arya's activity_logs collection.
-     * @deny (list) User 'john' with id 'john-id' cannot list activity logs in 'arya's activity_logs collection.
-     * @deny (update) User 'john' with id 'john-id' cannot update an activity log in 'arya's activity_logs collection.
-     * @deny (delete) User 'john' with id 'john-id' cannot delete an activity log in 'arya's activity_logs collection.
-     * @principle Restricts access to a user's own activity logs.
+     * @allow (get) Authenticated user 'user123' reads their own activity logs.
+     * @allow (create) Authenticated user 'user123' creates a log entry under their ID with matching userId.
+     * @allow (update, delete) Authenticated user 'user123' updates/deletes a log entry under their ID with matching userId.
+     * @deny (create) Authenticated user 'user123' creates a log entry under their ID with userId not matching their ID.
+     * @deny (get, list, update, delete) Authenticated user 'user456' attempts to access 'user123' activity logs.
+     * @principle Enforces user-specific data access; validates userId on creation.
      */
     match /users/{userId}/activity_logs/{logId} {
       allow get: if isOwner(userId);
       allow list: if isOwner(userId);
-      allow create: if isOwner(userId);
-      allow update: if isExistingOwner(userId);
+      allow create: if isOwner(userId) && request.resource.data.userId == request.auth.uid;
+      allow update: if isExistingOwner(userId) && request.resource.data.userId == request.auth.uid;
       allow delete: if isExistingOwner(userId);
     }
   }

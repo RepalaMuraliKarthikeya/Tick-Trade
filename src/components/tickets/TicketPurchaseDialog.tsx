@@ -84,29 +84,94 @@ export function TicketPurchaseDialog({ ticket, buyer, children }: TicketPurchase
       });
       return;
     }
+    
+    if (!firestore) {
+        toast({
+            variant: 'destructive',
+            title: 'Database Error',
+            description: 'Could not connect to the database.',
+        });
+        return;
+    }
 
     setIsPaying(true);
     setSelectedPaymentMethod(paymentMethod);
 
-    // Simulate payment processing time
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    // --- Bypassing Firestore Write to ensure UI success ---
-    
-    toast({
-      title: 'Payment Successful!',
-      description: `You've purchased ${ticket.ticketCount} ticket(s) for ${ticket.movieName}.`,
-    });
-    router.refresh();
+    try {
+        // Use a batch write to perform multiple operations atomically
+        const batch = writeBatch(firestore);
 
-    setIsPaying(false);
-    setIsDialogOpen(false);
-    setSelectedPaymentMethod(null);
+        // 1. Create a new transaction document
+        const transactionRef = doc(collection(firestore, 'transactions'));
+        const newTransaction: Omit<Transaction, 'id'> & { transactionDate: any } = {
+            ticketId: ticket.id,
+            buyerId: buyer.id,
+            sellerId: ticket.postedBy,
+            paymentMethod: paymentMethod,
+            transactionDate: serverTimestamp(),
+            amount: ticket.ticketPrice * ticket.ticketCount,
+        };
+        batch.set(transactionRef, newTransaction);
+        
+        // 2. Add a record to the user's purchased_tickets subcollection
+        const userPurchasedRef = doc(collection(firestore, `users/${buyer.id}/purchased_tickets`));
+        const userPurchasedData = {
+            ticketId: ticket.id,
+            transactionId: transactionRef.id,
+            purchaseDate: serverTimestamp(),
+        };
+        batch.set(userPurchasedRef, userPurchasedData);
+
+        // 3. Update the ticket's status to 'sold'
+        const ticketRef = doc(firestore, 'tickets', ticket.id);
+        batch.update(ticketRef, { status: 'sold' });
+
+        // Commit the batch
+        await batch.commit();
+
+        toast({
+            title: 'Payment Successful!',
+            description: `You've purchased ${ticket.ticketCount} ticket(s) for ${ticket.movieName}.`,
+        });
+
+        router.refresh();
+        setIsDialogOpen(false);
+
+    } catch (error) {
+        console.error("Firestore batch write failed:", error);
+        
+        // This is a generic error handler for any failure during the batch write.
+        const permissionError = new FirestorePermissionError({
+            path: `transactions (batch operation)`,
+            operation: 'write',
+            requestResourceData: { 
+                ticketId: ticket.id, 
+                buyerId: buyer.id, 
+                ticketStatusUpdate: { status: 'sold' }
+            },
+        });
+        errorEmitter.emit('permission-error', permissionError);
+
+        // Also show a user-friendly error message
+        toast({
+            variant: 'destructive',
+            title: 'Payment Failed',
+            description: 'There was an error processing your purchase. Please try again.',
+        });
+    } finally {
+        setIsPaying(false);
+        setSelectedPaymentMethod(null);
+    }
   };
   
   const handleTriggerClick = (e: React.MouseEvent) => {
     if (ticket.status === 'sold' || buyer?.id === ticket.postedBy) {
         e.preventDefault();
+        toast({
+            variant: 'destructive',
+            title: ticket.status === 'sold' ? 'Ticket Sold' : 'Cannot Buy Own Ticket',
+            description: ticket.status === 'sold' ? 'This ticket is no longer available.' : 'You cannot purchase a ticket you have posted.',
+        });
         return;
     }
   }
@@ -130,7 +195,7 @@ export function TicketPurchaseDialog({ ticket, buyer, children }: TicketPurchase
         </AlertDialogHeader>
 
         <div className="py-4 space-y-4">
-          <p className="font-semibold">Select Payment Method (Mock)</p>
+          <p className="font-semibold">Select Payment Method</p>
           <div className="flex flex-col gap-3">
             {paymentMethods.map((method) => (
               <Button
