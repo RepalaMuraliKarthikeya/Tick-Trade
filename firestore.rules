@@ -1,74 +1,39 @@
 /**
- * @file Firebase Security Rules for MovieRush.
- *
- * @description This ruleset enforces a strict user-ownership model for user-specific data while allowing public read access to the 'tickets' collection.
- *
- * @data_structure
- * - /users/{userId}: Stores user profile information; only accessible by the user themselves.
- * - /tickets/{ticketId}: Stores publicly-readable ticket information; write-access restricted to ticket owners.
- * - /users/{userId}/posted_tickets/{ticketId}: Stores tickets posted by a user; only accessible by that user.
- * - /users/{userId}/purchased_tickets/{transactionId}: Stores tickets purchased by a user; only accessible by that user.
- * - /transactions/{transactionId}: Stores all transactions; write-access is not explicitly granted in these rules.
- * - /users/{userId}/activity_logs/{logId}: Stores user activity logs; only accessible by that user.
- *
+ * @file Firestore Security Rules for MovieRush
+ * @core_philosophy This ruleset enforces a strict user-ownership model for user-specific data while allowing public read access to tickets.
+ * @data_structure Data is organized hierarchically:
+ *   - /users/{userId}: Stores user profiles (owner-only access).
+ *   - /tickets/{ticketId}: Stores all available tickets (public read, owner-only write).
+ *   - /users/{userId}/posted_tickets/{ticketId}: Stores tickets posted by a specific user (owner-only access).
+ *   - /users/{userId}/purchased_tickets/{transactionId}: Stores tickets purchased by a specific user (owner-only access).
+ *   - /transactions/{transactionId}: Stores all transaction records (no direct client write access).
+ *   - /users/{userId}/activity_logs/{logId}: Stores user activity logs (owner-only access).
  * @key_security_decisions
- * - Users can only access their own user document and associated subcollections.
- * - Public read access is granted to the /tickets collection, but write access is restricted to owners (determined by the 'postedBy' field).
- * - Listing of all users is disallowed for privacy reasons.
- * - Transactions collection writes are not explicitly granted and should be managed through other means (e.g., server-side functions).
- *
+ *   - User listing is disallowed.
+ *   - Tickets are publicly readable, but only the owner can modify them.
+ *   - Data required for authorization is denormalized to prevent costly `get()` calls.
+ *   - Write operations on `transactions` collection are denied, as transactions should be handled by backend functions.
  * @denormalization_for_authorization
- * - The 'postedBy' field is duplicated in the 'tickets' and 'users/{userId}/posted_tickets' collections to allow for simple ownership checks without additional reads.
- * - The 'buyerId' field is duplicated in the 'transactions' and 'users/{userId}/purchased_tickets' collections for similar reasons.
+ *   - The `postedBy` field is duplicated in `tickets` and `users/{userId}/posted_tickets` to avoid `get()` calls when checking ownership.
+ *   - The `buyerId` field is duplicated in `transactions` and `users/{userId}/purchased_tickets` to avoid `get()` calls when checking ownership.
+ * @structural_segregation User-specific data (posted tickets, purchased tickets, activity logs) is stored in user subcollections to enforce ownership and allow secure listing.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Checks if the request is made by the authenticated user.
-     * @path N/A (Helper Function)
-     * @allow N/A (Helper Function)
-     * @deny N/A (Helper Function)
-     * @principle Helper function; ensures the request is made by the authenticated user.
-     */
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    /**
-     * @description Checks if the authenticated user's ID matches the provided user ID.
-     * @path N/A (Helper Function)
-     * @allow N/A (Helper Function)
-     * @deny N/A (Helper Function)
-     * @principle Helper function; enforces user ownership.
-     */
-    function isOwner(userId) {
-      return request.auth.uid == userId;
-    }
-
-     /**
-      * @description Checks if the authenticated user's ID matches the provided user ID and the resource exists.
-      * @path N/A (Helper Function)
-      * @allow N/A (Helper Function)
-      * @deny N/A (Helper Function)
-      * @principle Helper function; enforces user ownership and resource existence for updates and deletes.
-      */
-    function isExistingOwner(userId) {
-        return isOwner(userId) && resource != null;
-    }
-
-    /**
-     * @description Controls access to user profiles.
-     * @path /databases/{database}/documents/users/{userId}
-     * @allow (get) User with ID 'user123' can read their own profile.
-     * @allow (create) User with ID 'user123' can create their own profile.
-     * @allow (update) User with ID 'user123' can update their own profile.
-     * @allow (delete) User with ID 'user123' can delete their own profile.
-     * @deny (get) User with ID 'user456' cannot read the profile of user 'user123'.
-     * @deny (create) User with ID 'user456' cannot create the profile of user 'user123'.
-     * @deny (update) User with ID 'user456' cannot update the profile of user 'user123'.
-     * @deny (delete) User with ID 'user456' cannot delete the profile of user 'user123'.
+     * @description Manages user profiles. Only the authenticated user can read or modify their own profile.
+     * @path /users/{userId}
+     * @allow (create) - User 'arya' with id 'aryaId' can create their profile.
+     *   request.auth.uid == 'aryaId'
+     *   request.resource.data.id == 'aryaId'
+     * @allow (get, update, delete) - User 'arya' with id 'aryaId' can read, update, or delete their own profile.
+     *   request.auth.uid == 'aryaId'
+     * @deny (create) - User 'bob' cannot create a profile for user 'arya'.
+     *   request.auth.uid == 'bobId' && request.resource.data.id == 'aryaId'
+     * @deny (get, update, delete) - User 'bob' cannot read, update, or delete user 'arya's profile.
+     *   request.auth.uid == 'bobId' && userId == 'aryaId'
      * @principle Enforces document ownership for all operations on user profiles.
      */
     match /users/{userId} {
@@ -80,101 +45,138 @@ service cloud.firestore {
     }
 
     /**
-     * @description Controls access to tickets.
-     * @path /databases/{database}/documents/tickets/{ticketId}
-     * @allow (get) Any user can read ticket information.
-     * @allow (list) Any user can list ticket information.
-     * @allow (create) User with ID 'user123' can create a ticket if they are the owner ('postedBy' field).
-     * @allow (update) User with ID 'user123' can update a ticket if they are the owner ('postedBy' field) and the ticket exists.
-     * @allow (delete) User with ID 'user123' can delete a ticket if they are the owner ('postedBy' field) and the ticket exists.
-     * @deny (create) User with ID 'user456' cannot create a ticket owned by user 'user123'.
-     * @deny (update) User with ID 'user456' cannot update a ticket owned by user 'user123'.
-     * @deny (delete) User with ID 'user456' cannot delete a ticket owned by user 'user123'.
-     * @principle Allows public read access but enforces document ownership for writes.
+     * @description Manages publicly available tickets. Anyone can read ticket information.
+     *              Only the ticket owner can create, update or delete a ticket.
+     * @path /tickets/{ticketId}
+     * @allow (get, list) - Any user can read/list tickets.
+     * @allow (create) - User 'arya' can create a ticket if they are the owner.
+     *   request.auth.uid == 'aryaId'
+     *   request.resource.data.postedBy == 'aryaId'
+     * @allow (update, delete) - User 'arya' can update/delete their ticket.
+     *   request.auth.uid == 'aryaId'
+     *   resource.data.postedBy == 'aryaId'
+     * @deny (create) - User 'bob' cannot create a ticket for 'arya'.
+     *   request.auth.uid == 'bobId' && request.resource.data.postedBy == 'aryaId'
+     * @deny (update, delete) - User 'bob' cannot update/delete 'arya's ticket.
+     *   request.auth.uid == 'bobId' && resource.data.postedBy == 'aryaId'
+     * @principle Allows public read access while enforcing document ownership for write operations.
      */
     match /tickets/{ticketId} {
       allow get, list: if true;
       allow create: if isSignedIn() && request.resource.data.postedBy == request.auth.uid;
-      allow update: if isSignedIn() && resource != null && resource.data.postedBy == request.auth.uid;
-      allow delete: if isSignedIn() && resource != null && resource.data.postedBy == request.auth.uid;
+      allow update: if isExistingOwner(resource.data.postedBy);
+      allow delete: if isExistingOwner(resource.data.postedBy);
     }
 
     /**
-     * @description Controls access to tickets posted by a specific user.
-     * @path /databases/{database}/documents/users/{userId}/posted_tickets/{ticketId}
-     * @allow (get) User with ID 'user123' can read their own posted tickets.
-     * @allow (list) User with ID 'user123' can list their own posted tickets.
-     * @allow (create) User with ID 'user123' can create a posted ticket under their ID.
-     * @allow (update) User with ID 'user123' can update a posted ticket under their ID, provided it exists.
-     * @allow (delete) User with ID 'user123' can delete a posted ticket under their ID, provided it exists.
-     * @deny (get) User with ID 'user456' cannot read tickets posted by user 'user123'.
-     * @deny (create) User with ID 'user456' cannot create a posted ticket under user 'user123''s ID.
-     * @principle Restricts access to a user's own posted tickets. Enforces that the `postedBy` field matches the path.
+     * @description Manages tickets posted by a specific user. Only the owner can create, read, update, or delete.
+     * @path /users/{userId}/posted_tickets/{ticketId}
+     * @allow (create) - User 'arya' can create a ticket under their profile.
+     *   request.auth.uid == 'aryaId'
+     *   request.resource.data.postedBy == 'aryaId'
+     * @allow (get, list, update, delete) - User 'arya' can read, list, update or delete tickets under their profile.
+     *   request.auth.uid == 'aryaId'
+     *   resource.data.postedBy == 'aryaId'
+     * @deny (create) - User 'bob' cannot create a ticket under 'arya's profile.
+     *   request.auth.uid == 'bobId' && userId == 'aryaId'
+     * @deny (get, list, update, delete) - User 'bob' cannot read, list, update or delete tickets under 'arya's profile.
+     *   request.auth.uid == 'bobId' && userId == 'aryaId'
+     * @principle Enforces document ownership for all operations on user-specific posted tickets.
      */
     match /users/{userId}/posted_tickets/{ticketId} {
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
+      allow get, list: if isOwner(userId);
       allow create: if isOwner(userId) && request.resource.data.postedBy == userId;
-      allow update: if isExistingOwner(userId) && request.resource.data.postedBy == userId;
+      allow update: if isExistingOwner(userId) && request.resource.data.postedBy == resource.data.postedBy;
       allow delete: if isExistingOwner(userId);
     }
 
     /**
-     * @description Controls access to tickets purchased by a specific user (transactions).
-     * @path /databases/{database}/documents/users/{userId}/purchased_tickets/{transactionId}
-     * @allow (get) User with ID 'user123' can read their own purchased tickets.
-     * @allow (list) User with ID 'user123' can list their own purchased tickets.
-     * @allow (create) User with ID 'user123' can create a purchased ticket under their ID, provided the `buyerId` matches.
-     * @allow (update) User with ID 'user123' can update a purchased ticket under their ID, provided the `buyerId` matches and the document exists.
-     * @allow (delete) User with ID 'user123' can delete a purchased ticket under their ID, provided it exists.
-     * @deny (create) User with ID 'user456' cannot create a purchased ticket under user 'user123''s ID.
-     * @principle Restricts access to a user's own purchased tickets. Enforces that the `buyerId` field matches the path.
+     * @description Manages tickets purchased by a specific user. Only the owner can create, read, update, or delete.
+     * @path /users/{userId}/purchased_tickets/{transactionId}
+     * @allow (create) - User 'arya' can create a purchased ticket under their profile.
+     *   request.auth.uid == 'aryaId'
+     *   request.resource.data.buyerId == 'aryaId'
+     * @allow (get, list) - User 'arya' can read or list their purchased tickets.
+     *   request.auth.uid == 'aryaId'
+     * @allow (update, delete) - User 'arya' can update or delete their purchased tickets.
+     *   request.auth.uid == 'aryaId'
+     *   resource.data.buyerId == 'aryaId'
+     * @deny (create) - User 'bob' cannot create a purchased ticket under 'arya's profile.
+     *   request.auth.uid == 'bobId' && request.resource.data.buyerId == 'aryaId'
+     * @deny (get, list, update, delete) - User 'bob' cannot read, list, update or delete tickets under 'arya's profile.
+     *   request.auth.uid == 'bobId' && userId == 'aryaId'
+     * @principle Enforces document ownership for all operations on user-specific purchased tickets.
      */
     match /users/{userId}/purchased_tickets/{transactionId} {
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
+      allow get, list: if isOwner(userId);
       allow create: if isOwner(userId) && request.resource.data.buyerId == userId;
-      allow update: if isExistingOwner(userId) && request.resource.data.buyerId == userId;
+      allow update: if isExistingOwner(userId) && request.resource.data.buyerId == resource.data.buyerId;
       allow delete: if isExistingOwner(userId);
     }
 
     /**
-     * @description Controls access to all transaction records.
-     * @path /databases/{database}/documents/transactions/{transactionId}
-     * @allow N/A
-     * @deny (get) Always deny read access to the 'transactions' collection.
-     * @deny (list) Always deny list access to the 'transactions' collection.
-     * @deny (create) Always deny create access to the 'transactions' collection.
-     * @deny (update) Always deny update access to the 'transactions' collection.
-     * @deny (delete) Always deny delete access to the 'transactions' collection.
-     * @principle Denies all direct access to the 'transactions' collection, suggesting that transactions are handled server-side.
+     * @description Manages transaction records. No direct client write access allowed. Transactions should be created via backend functions.
+     * @path /transactions/{transactionId}
+     * @allow (get, list) - Any user can read or list transactions.
+     * @deny (create, update, delete) - No direct client writes.
+     * @principle Transactions are created and managed by trusted server-side code, not directly by clients.
      */
     match /transactions/{transactionId} {
-      allow get: if false;
-      allow list: if false;
-      allow create: if false;
-      allow update: if false;
-      allow delete: if false;
+      allow get, list: if true;
+      allow create, update, delete: if false;
     }
 
     /**
-     * @description Controls access to user activity logs.
-     * @path /databases/{database}/documents/users/{userId}/activity_logs/{logId}
-     * @allow (get) User with ID 'user123' can read their own activity logs.
-     * @allow (list) User with ID 'user123' can list their own activity logs.
-     * @allow (create) User with ID 'user123' can create an activity log under their ID.
-     * @allow (update) User with ID 'user123' can update an activity log under their ID, provided it exists.
-     * @allow (delete) User with ID 'user123' can delete an activity log under their ID, provided it exists.
-     * @deny (get) User with ID 'user456' cannot read activity logs of user 'user123'.
-     * @deny (create) User with ID 'user456' cannot create an activity log under user 'user123''s ID.
-     * @principle Restricts access to a user's own activity logs.
+     * @description Manages user activity logs. Only the owner can create, read, update or delete their own activity logs.
+     * @path /users/{userId}/activity_logs/{logId}
+     * @allow (create) - User 'arya' can create an activity log under their profile.
+     *   request.auth.uid == 'aryaId'
+     *   request.resource.data.userId == 'aryaId'
+     * @allow (get, list) - User 'arya' can read or list their activity logs.
+     *   request.auth.uid == 'aryaId'
+     * @allow (update, delete) - User 'arya' can update or delete their activity logs.
+     *   request.auth.uid == 'aryaId'
+     *   resource.data.userId == 'aryaId'
+     * @deny (create) - User 'bob' cannot create an activity log under 'arya's profile.
+     *   request.auth.uid == 'bobId' && userId == 'aryaId'
+     * @deny (get, list, update, delete) - User 'bob' cannot read, list, update or delete activity logs under 'arya's profile.
+     *   request.auth.uid == 'bobId' && userId == 'aryaId'
+     * @principle Enforces document ownership for all operations on user-specific activity logs.
      */
     match /users/{userId}/activity_logs/{logId} {
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
+      allow get, list: if isOwner(userId);
       allow create: if isOwner(userId) && request.resource.data.userId == userId;
-      allow update: if isExistingOwner(userId) && request.resource.data.userId == userId;
+      allow update: if isExistingOwner(userId) && request.resource.data.userId == resource.data.userId;
       allow delete: if isExistingOwner(userId);
+    }
+
+    // ---- Helper functions ----
+
+    /**
+     * @description Checks if the request is made by an authenticated user.
+     * @return {bool} True if the user is signed in, false otherwise.
+     */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /**
+     * @description Checks if the authenticated user is the owner of the resource.
+     * @param {string} userId The user ID to compare against the request's auth UID.
+     * @return {bool} True if the user is the owner, false otherwise.
+     */
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    /**
+     * @description Checks if the authenticated user is the owner of the resource and the resource exists.
+     *              This is for update/delete operations.
+     * @param {string} userId The user ID to compare against the request's auth UID.
+     * @return {bool} True if the user is the owner and the resource exists, false otherwise.
+     */
+    function isExistingOwner(userId) {
+      return isOwner(userId) && resource != null;
     }
   }
 }
