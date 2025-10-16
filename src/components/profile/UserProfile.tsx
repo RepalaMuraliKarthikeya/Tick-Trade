@@ -20,6 +20,7 @@ type UserProfileProps = {
   postedTickets: Ticket[];
   purchasedTickets: Ticket[];
   isLoading: boolean;
+  onPurchaseSuccess: (ticketId: string) => void;
 };
 
 function EditableUserName({ user }: { user: User }) {
@@ -45,7 +46,6 @@ function EditableUserName({ user }: { user: User }) {
         await updateProfile(auth.currentUser!, { displayName });
         toast({ title: 'Success', description: 'Your name has been updated.' });
         setIsEditing(false);
-        // Force a refresh to show the new name
         router.refresh(); 
       } catch (error) {
         console.error('Error updating profile:', error);
@@ -79,7 +79,7 @@ function EditableUserName({ user }: { user: User }) {
 }
 
 
-export function UserProfile({ user, postedTickets, purchasedTickets, isLoading }: UserProfileProps) {
+export function UserProfile({ user, postedTickets, purchasedTickets, isLoading, onPurchaseSuccess }: UserProfileProps) {
   return (
     <div className="space-y-8">
       <header className="flex flex-col sm:flex-row items-center gap-6">
@@ -103,19 +103,29 @@ export function UserProfile({ user, postedTickets, purchasedTickets, isLoading }
           <TabsTrigger value="purchased">Tickets Purchased</TabsTrigger>
         </TabsList>
         <TabsContent value="posted" className="mt-6">
-          <TicketHistoryList tickets={postedTickets} isLoading={isLoading} emptyMessage="You haven't posted any tickets yet." />
+          <TicketHistoryList 
+            tickets={postedTickets} 
+            isLoading={isLoading} 
+            emptyMessage="You haven't posted any tickets yet."
+            onPurchaseSuccess={onPurchaseSuccess}
+          />
         </TabsContent>
         <TabsContent value="purchased" className="mt-6">
-          <TicketHistoryList tickets={purchasedTickets} isLoading={isLoading} emptyMessage="You haven't purchased any tickets yet. Browse available tickets to get started!" />
+          <TicketHistoryList 
+            tickets={purchasedTickets} 
+            isLoading={isLoading} 
+            emptyMessage="You haven't purchased any tickets yet. Browse available tickets to get started!"
+            onPurchaseSuccess={onPurchaseSuccess}
+          />
         </TabsContent>
       </Tabs>
     </div>
   );
 }
 
-function TicketHistoryList({ tickets, emptyMessage, isLoading }: { tickets: Ticket[], emptyMessage: string, isLoading: boolean }) {
+function TicketHistoryList({ tickets, emptyMessage, isLoading, onPurchaseSuccess }: { tickets: Ticket[], emptyMessage: string, isLoading: boolean, onPurchaseSuccess: (ticketId: string) => void; }) {
   if (isLoading) {
-    return <TicketList tickets={null} isLoading={true} />;
+    return <TicketList tickets={null} isLoading={true} onPurchaseSuccess={onPurchaseSuccess} />;
   }
   
   if (tickets.length === 0) {
@@ -130,7 +140,7 @@ function TicketHistoryList({ tickets, emptyMessage, isLoading }: { tickets: Tick
   }
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-      {tickets.map(ticket => <TicketCard key={ticket.id} ticket={ticket} />)}
+      {tickets.map(ticket => <TicketCard key={ticket.id} ticket={ticket} onPurchaseSuccess={onPurchaseSuccess} />)}
     </div>
   );
 }

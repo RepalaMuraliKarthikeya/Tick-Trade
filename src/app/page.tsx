@@ -26,32 +26,35 @@ export default function Home() {
   }, [ticketsCollection]);
 
   const { data: allAvailableTickets, isLoading } = useCollection<Omit<Ticket, 'id'>>(availableTicketsQuery);
-
+  
+  const [localTickets, setLocalTickets] = useState<Ticket[] | null>(null);
   const [filteredTickets, setFilteredTickets] = useState<Ticket[] | null>(null);
 
   const ticketsToDisplay = useMemo(() => {
-    const sourceTickets = filteredTickets !== null ? filteredTickets : allAvailableTickets;
-    // Ensure we have an array to work with, even if it's empty
+    const baseTickets = localTickets ?? allAvailableTickets;
+    const sourceTickets = filteredTickets !== null ? filteredTickets : baseTickets;
+    
     if (!sourceTickets) {
       return [];
     }
-    // Add the id back to the ticket objects for use in components
+    
     return sourceTickets.map(t => ({ ...t, id: (t as any).id || '' }));
-  }, [filteredTickets, allAvailableTickets]);
+  }, [filteredTickets, allAvailableTickets, localTickets]);
 
   const handleSearch = (searchQuery: string) => {
-    if (!allAvailableTickets) {
+    const baseTickets = localTickets ?? allAvailableTickets;
+    if (!baseTickets) {
       setFilteredTickets([]);
       return;
     }
 
     if (!searchQuery) {
-      setFilteredTickets(null); // Reset to show all available tickets
+      setFilteredTickets(null); 
       return;
     }
 
     const lowercasedQuery = searchQuery.toLowerCase();
-    const results = allAvailableTickets.filter(
+    const results = baseTickets.filter(
       (ticket) =>
         ticket.movieName.toLowerCase().includes(lowercasedQuery) ||
         ticket.theaterName.toLowerCase().includes(lowercasedQuery) ||
@@ -59,6 +62,25 @@ export default function Home() {
     );
     setFilteredTickets(results);
   };
+  
+  const handlePurchaseSuccess = (purchasedTicketId: string) => {
+    const baseTickets = localTickets ?? allAvailableTickets;
+    if (baseTickets) {
+      const updatedTickets = baseTickets.map(ticket =>
+        ticket.id === purchasedTicketId ? { ...ticket, status: 'sold' as 'sold' } : ticket
+      ).filter(ticket => ticket.status === 'available');
+      
+      setLocalTickets(updatedTickets);
+
+      if (filteredTickets) {
+        const updatedFiltered = filteredTickets.map(ticket =>
+          ticket.id === purchasedTicketId ? { ...ticket, status: 'sold' as 'sold' } : ticket
+        ).filter(ticket => ticket.status === 'available');
+        setFilteredTickets(updatedFiltered);
+      }
+    }
+  };
+
 
   return (
     <>
@@ -92,7 +114,7 @@ export default function Home() {
             </Button>
           </div>
         </div>
-        <TicketList tickets={ticketsToDisplay} isLoading={isLoading} />
+        <TicketList tickets={ticketsToDisplay} isLoading={isLoading} onPurchaseSuccess={handlePurchaseSuccess} />
       </div>
     </>
   );

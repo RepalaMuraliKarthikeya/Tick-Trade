@@ -7,9 +7,10 @@ import { Skeleton } from '../ui/skeleton';
 type TicketListProps = {
   tickets: Ticket[] | null;
   isLoading: boolean;
+  onPurchaseSuccess: (ticketId: string) => void;
 };
 
-export function TicketList({ tickets, isLoading }: TicketListProps) {
+export function TicketList({ tickets, isLoading, onPurchaseSuccess }: TicketListProps) {
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8">
@@ -36,7 +37,7 @@ export function TicketList({ tickets, isLoading }: TicketListProps) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8">
       {tickets.map((ticket) => (
-        <TicketCard key={ticket.id} ticket={ticket} />
+        <TicketCard key={ticket.id} ticket={ticket} onPurchaseSuccess={onPurchaseSuccess} />
       ))}
     </div>
   );

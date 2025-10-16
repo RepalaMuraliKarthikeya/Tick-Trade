@@ -8,9 +8,10 @@ import { useUser } from '@/firebase';
 
 type TicketCardProps = {
   ticket: Ticket;
+  onPurchaseSuccess: (ticketId: string) => void;
 };
 
-export function TicketCard({ ticket }: TicketCardProps) {
+export function TicketCard({ ticket, onPurchaseSuccess }: TicketCardProps) {
   const showDateTime = new Date(ticket.dateTime);
   const { user } = useUser();
 
@@ -32,7 +33,7 @@ export function TicketCard({ ticket }: TicketCardProps) {
         </div>
         <CardContent className="p-4 space-y-3">
             <div className="min-h-[64px]">
-              <TicketPurchaseDialog ticket={ticket} buyer={currentBuyer}>
+              <TicketPurchaseDialog ticket={ticket} buyer={currentBuyer} onPurchaseSuccess={onPurchaseSuccess}>
                 <h3 className="font-headline text-2xl font-bold truncate text-white cursor-pointer hover:text-primary transition-colors">
                   {ticket.movieName}
                 </h3>

@@ -5,9 +5,8 @@ import { useUser, useCollection, useFirestore } from '@/firebase';
 import type { Ticket, Transaction } from '@/lib/types';
 import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useMemoFirebase } from '@/firebase/provider';
 
 export default function ProfilePage() {
   const { user, isUserLoading, userError } = useUser();
@@ -25,43 +24,64 @@ export default function ProfilePage() {
     }
   }, [user, isUserLoading, router]);
 
-  useEffect(() => {
+  const fetchPostedTickets = useCallback(async () => {
     if (user && firestore) {
-      const fetchPostedTickets = async () => {
-        setIsLoadingPosted(true);
-        const q = query(collection(firestore, 'tickets'), where('postedBy', '==', user.uid));
-        const querySnapshot = await getDocs(q);
-        const tickets = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Ticket));
-        setPostedTickets(tickets);
-        setIsLoadingPosted(false);
-      };
-
-      const fetchPurchasedTickets = async () => {
-        setIsLoadingPurchased(true);
-        const purchasedCollectionRef = collection(firestore, `users/${user.uid}/purchased_tickets`);
-        const purchasedSnapshot = await getDocs(purchasedCollectionRef);
-        
-        const ticketPromises = purchasedSnapshot.docs.map(async (transactionDoc) => {
-          const transactionData = transactionDoc.data() as Transaction;
-          if (transactionData.ticketId) {
-            const ticketRef = doc(firestore, 'tickets', transactionData.ticketId);
-            const ticketSnap = await getDoc(ticketRef);
-            if (ticketSnap.exists()) {
-              return { id: ticketSnap.id, ...ticketSnap.data() } as Ticket;
-            }
-          }
-          return null;
-        });
-
-        const tickets = (await Promise.all(ticketPromises)).filter((t): t is Ticket => t !== null);
-        setPurchasedTickets(tickets);
-        setIsLoadingPurchased(false);
-      };
-
-      fetchPostedTickets();
-      fetchPurchasedTickets();
+      setIsLoadingPosted(true);
+      const q = query(collection(firestore, 'tickets'), where('postedBy', '==', user.uid));
+      const querySnapshot = await getDocs(q);
+      const tickets = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Ticket));
+      setPostedTickets(tickets);
+      setIsLoadingPosted(false);
     }
   }, [user, firestore]);
+
+  const fetchPurchasedTickets = useCallback(async () => {
+    if (user && firestore) {
+      setIsLoadingPurchased(true);
+      const purchasedCollectionRef = collection(firestore, `users/${user.uid}/purchased_tickets`);
+      const purchasedSnapshot = await getDocs(purchasedCollectionRef);
+      
+      const ticketPromises = purchasedSnapshot.docs.map(async (transactionDoc) => {
+        const transactionData = transactionDoc.data() as Omit<Transaction, 'id'>;
+        if (transactionData.ticketId) {
+          const ticketRef = doc(firestore, 'tickets', transactionData.ticketId);
+          const ticketSnap = await getDoc(ticketRef);
+          if (ticketSnap.exists()) {
+            return { id: ticketSnap.id, ...ticketSnap.data() } as Ticket;
+          }
+        }
+        return null;
+      });
+
+      const tickets = (await Promise.all(ticketPromises)).filter((t): t is Ticket => t !== null);
+      setPurchasedTickets(prev => {
+        const existingIds = new Set(prev.map(t => t.id));
+        const newTickets = tickets.filter(t => !existingIds.has(t.id));
+        return [...prev, ...newTickets];
+      });
+      setIsLoadingPurchased(false);
+    }
+  }, [user, firestore]);
+  
+  const handlePurchaseSuccess = useCallback(async (purchasedTicketId: string) => {
+    if (firestore) {
+      const ticketRef = doc(firestore, 'tickets', purchasedTicketId);
+      const ticketSnap = await getDoc(ticketRef);
+      if (ticketSnap.exists()) {
+        const newPurchasedTicket = { id: ticketSnap.id, ...ticketSnap.data() } as Ticket;
+        setPurchasedTickets(prev => [...prev, newPurchasedTicket]);
+        
+        // Also remove it from posted tickets if it was posted by this user
+        setPostedTickets(prev => prev.map(t => t.id === purchasedTicketId ? { ...t, status: 'sold' } : t));
+      }
+    }
+  }, [firestore]);
+
+
+  useEffect(() => {
+    fetchPostedTickets();
+    fetchPurchasedTickets();
+  }, [fetchPostedTickets, fetchPurchasedTickets]);
 
   if (isUserLoading || !user) {
     return (
@@ -98,6 +118,7 @@ export default function ProfilePage() {
         postedTickets={postedTickets}
         purchasedTickets={purchasedTickets}
         isLoading={isLoadingPosted || isLoadingPurchased}
+        onPurchaseSuccess={handlePurchaseSuccess}
       />
     </div>
   );

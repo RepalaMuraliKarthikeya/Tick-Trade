@@ -1,6 +1,6 @@
 'use client';
 
-import type { Ticket, User, Transaction } from '@/lib/types';
+import type { Ticket, User } from '@/lib/types';
 import { Banknote, CreditCard, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,15 +15,12 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { useFirebase } from '@/firebase';
-import { doc, writeBatch, collection, serverTimestamp } from 'firebase/firestore';
-import { errorEmitter } from '@/firebase/error-emitter';
-import { FirestorePermissionError } from '@/firebase/errors';
 
 type TicketPurchaseDialogProps = {
   ticket: Ticket;
   buyer: User | null;
   children: React.ReactNode;
+  onPurchaseSuccess: (ticketId: string) => void;
 };
 
 const paymentMethods = [
@@ -54,10 +51,9 @@ const paymentMethods = [
   },
 ];
 
-export function TicketPurchaseDialog({ ticket, buyer, children }: TicketPurchaseDialogProps) {
+export function TicketPurchaseDialog({ ticket, buyer, children, onPurchaseSuccess }: TicketPurchaseDialogProps) {
   const router = useRouter();
   const { toast } = useToast();
-  const { firestore } = useFirebase();
 
   const [isPaying, setIsPaying] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -83,81 +79,24 @@ export function TicketPurchaseDialog({ ticket, buyer, children }: TicketPurchase
       return;
     }
 
-    if (!firestore) {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Database service is not available.',
-      });
-      return;
-    }
-
     setIsPaying(true);
     setSelectedPaymentMethod(paymentMethod);
 
-    try {
-      // 1. Create a batch write
-      const batch = writeBatch(firestore);
-
-      // 2. Define references
-      const ticketRef = doc(firestore, 'tickets', ticket.id);
-      const transactionRef = doc(collection(firestore, 'transactions'));
-      const userPurchasedRef = doc(collection(firestore, `users/${buyer.id}/purchased_tickets`), transactionRef.id);
-
-      // 3. Prepare data
-      const newTransaction: Omit<Transaction, 'id'> = {
-        ticketId: ticket.id,
-        buyerId: buyer.id,
-        sellerId: ticket.postedBy,
-        paymentMethod: paymentMethod,
-        transactionDate: new Date().toISOString(),
-        amount: ticket.ticketPrice * ticket.ticketCount,
-      };
-
-      // 4. Add operations to the batch
-      batch.update(ticketRef, { status: 'sold' });
-      batch.set(transactionRef, newTransaction);
-      batch.set(userPurchasedRef, { ticketId: ticket.id, transactionDate: newTransaction.transactionDate });
-
-      // 5. Commit the batch
-      await batch.commit();
-
+    // Simulate payment processing with a 2-second delay
+    setTimeout(() => {
       toast({
         title: 'Payment Successful!',
         description: `You've purchased ${ticket.ticketCount} ticket(s) for ${ticket.movieName}.`,
       });
-
-      // 6. Refresh the page to show updated lists
-      router.refresh();
-
-    } catch (error: any) {
-      console.error("Payment failed:", error);
       
-      const permissionError = new FirestorePermissionError({
-        path: `BATCH WRITE to tickets, transactions, and users/${buyer.id}/purchased_tickets`,
-        operation: 'write',
-        requestResourceData: { 
-          ticketUpdate: { status: 'sold' },
-          transactionData: '...',
-          userPurchaseData: '...'
-        }
-      });
-      
-      errorEmitter.emit('permission-error', permissionError);
+      // Notify parent component of the successful "purchase" for UI update
+      onPurchaseSuccess(ticket.id);
 
-      // Also show a user-friendly error
-      toast({
-        variant: 'destructive',
-        title: 'Payment Failed',
-        description: error.message || 'Could not complete the purchase. Please try again.',
-      });
-
-    } finally {
       // Reset state and close dialog
       setIsPaying(false);
       setSelectedPaymentMethod(null);
       setIsDialogOpen(false);
-    }
+    }, 2000);
   };
 
   const handleTriggerClick = (e: React.MouseEvent) => {
