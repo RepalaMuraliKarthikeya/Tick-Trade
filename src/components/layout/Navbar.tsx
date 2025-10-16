@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Menu, X, Home, Ticket, User, LogOut } from 'lucide-react';
 import { Logo } from '@/components/Logo';
 import { Button } from '@/components/ui/button';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useAuth, useFirebase, useUser } from '@/firebase';
 import { signOut } from 'firebase/auth';
@@ -26,19 +26,29 @@ export function Navbar() {
   const auth = useAuth();
   const { firestore } = useFirebase();
   const { toast } = useToast();
+  const router = useRouter();
 
   const handleLogout = async () => {
-    if (!user || !firestore) {
-      toast({ variant: 'destructive', title: 'Logout failed', description: 'Could not log you out. Please try again.' });
+    // Critical change: Check auth.currentUser directly.
+    // This is more reliable than the useUser hook's state during the exact moment of an action.
+    const currentUser = auth.currentUser;
+
+    if (!currentUser || !firestore) {
+      toast({ variant: 'destructive', title: 'Logout failed', description: 'User session not found. Please try again.' });
       return;
     }
     
     try {
-      // It's important to capture the userId before signing out
-      const userId = user.uid;
+      const userId = currentUser.uid;
+      // Log the activity first
       await logUserActivity(firestore, userId, 'logout');
+      
+      // Then sign out
       await signOut(auth);
+      
       toast({ title: 'Logged out successfully' });
+      // Redirect to home page after successful logout
+      router.push('/');
     } catch (error) {
       console.error("Error signing out: ", error);
       toast({ variant: 'destructive', title: 'Logout failed', description: 'Could not log you out. Please try again.' });
