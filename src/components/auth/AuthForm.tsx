@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useForm } from 'react-hook-form';
@@ -14,16 +15,18 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useTransition } from 'react';
+import { useTransition, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import Link from 'next/link';
-import { useAuth, useFirebase } from '@/firebase';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { useAuth, useFirebase, useUser } from '@/firebase';
+import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { FirebaseError } from 'firebase/app';
 import { doc, setDoc } from 'firebase/firestore';
 import { logUserActivity } from '@/lib/activity-logger';
+import { initiateEmailSignIn } from '@/firebase/non-blocking-login';
+import { setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 
 const formSchema = z.object({
   name: z.string().optional(),
@@ -41,6 +44,7 @@ export function AuthForm({ mode }: AuthFormProps) {
   const { toast } = useToast();
   const auth = useAuth();
   const { firestore } = useFirebase();
+  const { user, isUserLoading } = useUser();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -51,6 +55,15 @@ export function AuthForm({ mode }: AuthFormProps) {
     },
   });
 
+  // Redirect if user is already logged in
+  useEffect(() => {
+    if (!isUserLoading && user) {
+      if (pathname === '/login' || pathname === '/signup') {
+        router.push('/profile');
+      }
+    }
+  }, [user, isUserLoading, router, pathname]);
+
   async function onSubmit(values: z.infer<typeof formSchema>) {
     if (!firestore) {
       toast({ variant: "destructive", title: "Error", description: "Database not available." });
@@ -59,40 +72,32 @@ export function AuthForm({ mode }: AuthFormProps) {
 
     startTransition(async () => {
       try {
-        let userCredential;
         if (mode === 'login') {
-          userCredential = await signInWithEmailAndPassword(auth, values.email, values.password);
-          const user = userCredential.user;
-          // Ensure user profile is created/updated on login as well
-          const userRef = doc(firestore, 'users', user.uid);
-          await setDoc(userRef, {
-            id: user.uid,
-            name: user.displayName,
-            email: user.email,
-          }, { merge: true });
+          // Use non-blocking sign-in
+          initiateEmailSignIn(auth, values.email, values.password);
 
         } else { // signup mode
-          userCredential = await createUserWithEmailAndPassword(auth, values.email, values.password);
+          const userCredential = await createUserWithEmailAndPassword(auth, values.email, values.password);
           const user = userCredential.user;
           const nameToSet = values.name || values.email.split('@')[0];
           await updateProfile(user, { displayName: nameToSet });
           
           const userRef = doc(firestore, 'users', user.uid);
-          await setDoc(userRef, {
+          // Use non-blocking setDoc
+          setDocumentNonBlocking(userRef, {
             id: user.uid,
             name: nameToSet,
             email: user.email,
           }, { merge: true });
-        }
-        
-        const user = userCredential.user;
-        await logUserActivity(firestore, user.uid, 'login');
 
-        toast({
-          title: mode === 'login' ? "Login Successful" : "Signup Successful",
-          description: "Welcome to MovieRush! Redirecting...",
-        });
-        router.push('/profile');
+          await logUserActivity(firestore, user.uid, 'login');
+
+          toast({
+            title: "Signup Successful",
+            description: "Welcome to MovieRush! Redirecting...",
+          });
+          router.push('/profile');
+        }
       } catch (error) {
         let errorMessage = "An unexpected error occurred.";
         if (error instanceof FirebaseError) {
@@ -121,6 +126,32 @@ export function AuthForm({ mode }: AuthFormProps) {
       }
     });
   }
+
+  // Effect to handle post-login actions for login mode
+  const pathname = usePathname();
+  useEffect(() => {
+    if (mode === 'login' && !isUserLoading && user && firestore) {
+      if (pathname === '/login') { // Only act when on the login page
+        startTransition(async () => {
+          const userRef = doc(firestore, 'users', user.uid);
+          setDocumentNonBlocking(userRef, {
+            id: user.uid,
+            name: user.displayName,
+            email: user.email,
+          }, { merge: true });
+
+          await logUserActivity(firestore, user.uid, 'login');
+
+          toast({
+            title: "Login Successful",
+            description: "Welcome back to MovieRush! Redirecting...",
+          });
+          router.push('/profile');
+        });
+      }
+    }
+  }, [mode, user, isUserLoading, firestore, router, toast, pathname]);
+
 
   return (
     <Card className="w-full max-w-sm bg-card/50 backdrop-blur-sm border-white/10">
@@ -205,3 +236,13 @@ export function AuthForm({ mode }: AuthFormProps) {
     </Card>
   );
 }
+
+// Add this to avoid undefined error
+function usePathname() {
+  if (typeof window !== 'undefined') {
+    return window.location.pathname;
+  }
+  return '';
+}
+
+    
