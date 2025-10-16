@@ -1,11 +1,7 @@
 'use client';
 
-import type { Ticket, User } from '@/lib/types';
-import {
-  Banknote,
-  CreditCard,
-  Loader2,
-} from 'lucide-react';
+import type { Ticket, User, Transaction } from '@/lib/types';
+import { Banknote, CreditCard, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -19,6 +15,10 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { useFirebase } from '@/firebase';
+import { doc, writeBatch, collection, serverTimestamp } from 'firebase/firestore';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 type TicketPurchaseDialogProps = {
   ticket: Ticket;
@@ -57,6 +57,7 @@ const paymentMethods = [
 export function TicketPurchaseDialog({ ticket, buyer, children }: TicketPurchaseDialogProps) {
   const router = useRouter();
   const { toast } = useToast();
+  const { firestore } = useFirebase();
 
   const [isPaying, setIsPaying] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -81,40 +82,98 @@ export function TicketPurchaseDialog({ ticket, buyer, children }: TicketPurchase
       });
       return;
     }
-    
+
+    if (!firestore) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Database service is not available.',
+      });
+      return;
+    }
+
     setIsPaying(true);
     setSelectedPaymentMethod(paymentMethod);
 
-    // Simulate a dummy payment process
-    setTimeout(() => {
+    try {
+      // 1. Create a batch write
+      const batch = writeBatch(firestore);
+
+      // 2. Define references
+      const ticketRef = doc(firestore, 'tickets', ticket.id);
+      const transactionRef = doc(collection(firestore, 'transactions'));
+      const userPurchasedRef = doc(collection(firestore, `users/${buyer.id}/purchased_tickets`), transactionRef.id);
+
+      // 3. Prepare data
+      const newTransaction: Omit<Transaction, 'id'> = {
+        ticketId: ticket.id,
+        buyerId: buyer.id,
+        sellerId: ticket.postedBy,
+        paymentMethod: paymentMethod,
+        transactionDate: new Date().toISOString(),
+        amount: ticket.ticketPrice * ticket.ticketCount,
+      };
+
+      // 4. Add operations to the batch
+      batch.update(ticketRef, { status: 'sold' });
+      batch.set(transactionRef, newTransaction);
+      batch.set(userPurchasedRef, { ticketId: ticket.id, transactionDate: newTransaction.transactionDate });
+
+      // 5. Commit the batch
+      await batch.commit();
+
       toast({
-          title: 'Payment Successful!',
-          description: `You've purchased ${ticket.ticketCount} ticket(s) for ${ticket.movieName}.`,
+        title: 'Payment Successful!',
+        description: `You've purchased ${ticket.ticketCount} ticket(s) for ${ticket.movieName}.`,
+      });
+
+      // 6. Refresh the page to show updated lists
+      router.refresh();
+
+    } catch (error: any) {
+      console.error("Payment failed:", error);
+      
+      const permissionError = new FirestorePermissionError({
+        path: `BATCH WRITE to tickets, transactions, and users/${buyer.id}/purchased_tickets`,
+        operation: 'write',
+        requestResourceData: { 
+          ticketUpdate: { status: 'sold' },
+          transactionData: '...',
+          userPurchaseData: '...'
+        }
       });
       
+      errorEmitter.emit('permission-error', permissionError);
+
+      // Also show a user-friendly error
+      toast({
+        variant: 'destructive',
+        title: 'Payment Failed',
+        description: error.message || 'Could not complete the purchase. Please try again.',
+      });
+
+    } finally {
       // Reset state and close dialog
       setIsPaying(false);
       setSelectedPaymentMethod(null);
       setIsDialogOpen(false);
-      
-      // Refresh the page to reflect changes (like the ticket being "sold" if UI depended on it)
-      // Note: Since we are not updating the database, the ticket will still appear as available on refresh.
-      router.refresh();
-    }, 2000); // 2-second delay to simulate processing
+    }
   };
-  
+
   const handleTriggerClick = (e: React.MouseEvent) => {
     if (ticket.status === 'sold' || buyer?.id === ticket.postedBy) {
-        e.preventDefault();
-        toast({
-            variant: 'destructive',
-            title: ticket.status === 'sold' ? 'Ticket Sold' : 'Cannot Buy Own Ticket',
-            description: ticket.status === 'sold' ? 'This ticket is no longer available.' : 'You cannot purchase a ticket you have posted.',
-        });
-        return;
+      e.preventDefault();
+      toast({
+        variant: 'destructive',
+        title: ticket.status === 'sold' ? 'Ticket Sold' : 'Cannot Buy Own Ticket',
+        description:
+          ticket.status === 'sold'
+            ? 'This ticket is no longer available.'
+            : 'You cannot purchase a ticket you have posted.',
+      });
+      return;
     }
-  }
-
+  };
 
   return (
     <AlertDialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -128,8 +187,9 @@ export function TicketPurchaseDialog({ ticket, buyer, children }: TicketPurchase
             Confirm Purchase
           </AlertDialogTitle>
           <AlertDialogDescription>
-            You are about to purchase {ticket.ticketCount} ticket(s) for {ticket.movieName}.
-            Choose a payment method to proceed. Total: ₹{(ticket.ticketPrice * ticket.ticketCount).toFixed(2)}
+            You are about to purchase {ticket.ticketCount} ticket(s) for{' '}
+            {ticket.movieName}. Choose a payment method to proceed. Total: ₹
+            {(ticket.ticketPrice * ticket.ticketCount).toFixed(2)}
           </AlertDialogDescription>
         </AlertDialogHeader>
 
