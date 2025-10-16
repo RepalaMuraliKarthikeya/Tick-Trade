@@ -1,6 +1,6 @@
 'use client';
 
-import type { Ticket, Transaction, User } from '@/lib/types';
+import type { Ticket, User } from '@/lib/types';
 import {
   Banknote,
   CreditCard,
@@ -19,8 +19,6 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { useFirebase, errorEmitter, FirestorePermissionError } from '@/firebase';
-import { doc, collection, writeBatch, serverTimestamp } from 'firebase/firestore';
 
 type TicketPurchaseDialogProps = {
   ticket: Ticket;
@@ -59,7 +57,6 @@ const paymentMethods = [
 export function TicketPurchaseDialog({ ticket, buyer, children }: TicketPurchaseDialogProps) {
   const router = useRouter();
   const { toast } = useToast();
-  const { firestore } = useFirebase();
 
   const [isPaying, setIsPaying] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -85,78 +82,25 @@ export function TicketPurchaseDialog({ ticket, buyer, children }: TicketPurchase
       return;
     }
     
-    if (!firestore) {
-        toast({
-            variant: 'destructive',
-            title: 'Database Error',
-            description: 'Could not connect to the database.',
-        });
-        return;
-    }
-
     setIsPaying(true);
     setSelectedPaymentMethod(paymentMethod);
 
-    try {
-      const batch = writeBatch(firestore);
-
-      // 1. Create a new transaction document
-      const transactionRef = doc(collection(firestore, 'transactions'));
-      const newTransaction = {
-          ticketId: ticket.id,
-          buyerId: buyer.id,
-          sellerId: ticket.postedBy,
-          paymentMethod: paymentMethod,
-          transactionDate: serverTimestamp(),
-          amount: ticket.ticketPrice * ticket.ticketCount,
-      };
-      batch.set(transactionRef, newTransaction);
-      
-      // 2. Add a record to the user's purchased_tickets subcollection
-      const userPurchasedRef = doc(collection(firestore, `users/${buyer.id}/purchased_tickets`));
-      const userPurchasedData = {
-          ticketId: ticket.id,
-          transactionId: transactionRef.id,
-          purchaseDate: serverTimestamp(),
-      };
-      batch.set(userPurchasedRef, userPurchasedData);
-
-      // 3. Update the ticket's status to 'sold'
-      const ticketRef = doc(firestore, 'tickets', ticket.id);
-      batch.update(ticketRef, { status: 'sold' });
-
-      await batch.commit();
-
+    // Simulate a dummy payment process
+    setTimeout(() => {
       toast({
           title: 'Payment Successful!',
           description: `You've purchased ${ticket.ticketCount} ticket(s) for ${ticket.movieName}.`,
       });
-      router.refresh();
+      
+      // Reset state and close dialog
+      setIsPaying(false);
+      setSelectedPaymentMethod(null);
       setIsDialogOpen(false);
-
-    } catch (error: any) {
-        console.error("Payment failed:", error);
-
-        // Emit a detailed error for debugging security rules.
-        const permissionError = new FirestorePermissionError({
-            path: 'BATCH WRITE', // Generic path for batch
-            operation: 'write',
-            requestResourceData: { 
-                note: 'This was a batch write. The failing path could be transactions, users/{userId}/purchased_tickets, or tickets/{ticketId}. Check all three.',
-            },
-        });
-        errorEmitter.emit('permission-error', permissionError);
-
-        // Also show a user-friendly error message
-        toast({
-            variant: 'destructive',
-            title: 'Payment Failed',
-            description: 'There was an error processing your purchase. Please try again.',
-        });
-    } finally {
-        setIsPaying(false);
-        setSelectedPaymentMethod(null);
-    }
+      
+      // Refresh the page to reflect changes (like the ticket being "sold" if UI depended on it)
+      // Note: Since we are not updating the database, the ticket will still appear as available on refresh.
+      router.refresh();
+    }, 2000); // 2-second delay to simulate processing
   };
   
   const handleTriggerClick = (e: React.MouseEvent) => {
