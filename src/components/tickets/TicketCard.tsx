@@ -4,6 +4,8 @@ import type { Ticket } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Calendar, MapPin, Ticket as TicketIcon } from 'lucide-react';
 import { format } from 'date-fns';
+import { TicketPurchaseDialog } from './TicketPurchaseDialog';
+import { useUser } from '@/firebase';
 
 type TicketCardProps = {
   ticket: Ticket;
@@ -11,11 +13,14 @@ type TicketCardProps = {
 
 export function TicketCard({ ticket }: TicketCardProps) {
   const showDateTime = new Date(ticket.dateTime);
+  const { user } = useUser();
+
+  const currentBuyer = user ? { id: user.uid, name: user.displayName, email: user.email } : null;
 
   return (
-    <Link href={`/tickets/${ticket.id}`} className="group block">
+    <div className="group block">
       <Card className="overflow-hidden h-full transition-all duration-300 ease-in-out group-hover:shadow-xl group-hover:shadow-primary/20 group-hover:-translate-y-2 bg-card/50 backdrop-blur-sm border-white/10">
-        <div className="relative aspect-[2/3] w-full">
+        <Link href={`/tickets/${ticket.id}`} className="block relative aspect-[2/3] w-full">
           <Image
             src={ticket.posterImageUrl}
             alt={ticket.movieName}
@@ -25,12 +30,16 @@ export function TicketCard({ ticket }: TicketCardProps) {
             data-ai-hint={ticket.imageHint}
           />
            <div className="absolute bottom-0 left-0 right-0 h-2/3 bg-gradient-to-t from-black/90 to-transparent"></div>
-           <div className="absolute bottom-4 left-4 right-4">
-             <h3 className="font-headline text-2xl font-bold truncate text-white">{ticket.movieName}</h3>
-             <p className="text-sm text-white/80 font-medium truncate">{ticket.theaterName}</p>
-           </div>
-        </div>
+        </Link>
         <CardContent className="p-4 space-y-3">
+            <div className="min-h-[64px]">
+              <TicketPurchaseDialog ticket={ticket} buyer={currentBuyer}>
+                <h3 className="font-headline text-2xl font-bold truncate text-white cursor-pointer hover:text-primary transition-colors">
+                  {ticket.movieName}
+                </h3>
+              </TicketPurchaseDialog>
+              <p className="text-sm text-white/80 font-medium truncate">{ticket.theaterName}</p>
+            </div>
             <div className="flex justify-between items-center">
                 <div className="font-bold text-2xl text-accent">
                     ₹{ticket.ticketPrice.toFixed(2)}
@@ -54,6 +63,6 @@ export function TicketCard({ ticket }: TicketCardProps) {
             </div>
         </CardContent>
       </Card>
-    </Link>
+    </div>
   );
 }
