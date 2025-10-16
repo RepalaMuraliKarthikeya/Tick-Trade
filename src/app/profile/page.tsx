@@ -2,7 +2,7 @@
 "use client";
 
 import { UserProfile } from '@/components/profile/UserProfile';
-import { useUser, useCollection, useFirestore } from '@/firebase';
+import { useUser, useFirestore } from '@/firebase';
 import type { Ticket, Transaction } from '@/lib/types';
 import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
@@ -28,7 +28,7 @@ export default function ProfilePage() {
   const fetchPostedTickets = useCallback(async () => {
     if (user && firestore) {
       setIsLoadingPosted(true);
-      const q = query(collection(firestore, 'tickets'), where('postedBy', '==', user.uid));
+      const q = query(collection(firestore, 'tickets'), where('postedBy', '==', user.uid), where('status', '==', 'available'));
       const querySnapshot = await getDocs(q);
       const tickets = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Ticket));
       setPostedTickets(tickets);
@@ -39,32 +39,15 @@ export default function ProfilePage() {
   const fetchPurchasedTickets = useCallback(async () => {
     if (user && firestore) {
       setIsLoadingPurchased(true);
-      const purchasedCollectionRef = collection(firestore, `users/${user.uid}/purchased_tickets`);
-      const purchasedSnapshot = await getDocs(purchasedCollectionRef);
-      
-      const ticketPromises = purchasedSnapshot.docs.map(async (transactionDoc) => {
-        const transactionData = transactionDoc.data() as Omit<Transaction, 'id'>;
-        if (transactionData.ticketId) {
-          const ticketRef = doc(firestore, 'tickets', transactionData.ticketId);
-          const ticketSnap = await getDoc(ticketRef);
-          if (ticketSnap.exists()) {
-            return { id: ticketSnap.id, ...ticketSnap.data() } as Ticket;
-          }
-        }
-        return null;
-      });
-
-      const tickets = (await Promise.all(ticketPromises)).filter((t): t is Ticket => t !== null);
-      setPurchasedTickets(prev => {
-        const existingIds = new Set(prev.map(t => t.id));
-        const newTickets = tickets.filter(t => !existingIds.has(t.id));
-        return [...prev, ...newTickets];
-      });
+      // This part is for the dummy flow, we will assume no tickets are purchased initially from DB
+      // In a real scenario, we would fetch from `users/${user.uid}/purchased_tickets`
+      setPurchasedTickets([]);
       setIsLoadingPurchased(false);
     }
   }, [user, firestore]);
   
   const handlePurchaseSuccess = useCallback((newlyPurchasedTicket: Ticket) => {
+    // Add to purchased tickets list if it's not already there
     setPurchasedTickets(prev => {
         const ticketExists = prev.some(t => t.id === newlyPurchasedTicket.id);
         if (!ticketExists) {
@@ -73,6 +56,7 @@ export default function ProfilePage() {
         return prev;
     });
 
+    // Remove from posted tickets list
     setPostedTickets(prev => prev.filter(t => t.id !== newlyPurchasedTicket.id));
   }, []);
 
