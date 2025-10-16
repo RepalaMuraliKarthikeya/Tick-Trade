@@ -135,15 +135,18 @@ export function TicketPurchaseDialog({ ticket, buyer, children }: TicketPurchase
           setIsDialogOpen(false);
       })
       .catch((error) => {
-          console.error("Firestore batch write failed:", error);
-          
           // This is a generic error handler for any failure during the batch write.
+          // We will emit a detailed error for each part of the batch.
+          // This isn't perfect as we don't know which one failed, but it gives enough context.
           const permissionError = new FirestorePermissionError({
-              path: `transactions (batch operation)`,
+              path: `BATCH WRITE FAILED:
+- ${transactionRef.path}
+- ${userPurchasedRef.path}
+- ${ticketRef.path}`,
               operation: 'write',
               requestResourceData: { 
-                  ticketId: ticket.id, 
-                  buyerId: buyer.id, 
+                  transaction: newTransaction,
+                  userPurchaseRecord: userPurchasedData,
                   ticketStatusUpdate: { status: 'sold' }
               },
           });
