@@ -1,3 +1,4 @@
+
 'use client';
 
 import type { Ticket, User } from '@/lib/types';
@@ -20,7 +21,7 @@ type TicketPurchaseDialogProps = {
   ticket: Ticket;
   buyer: User | null;
   children: React.ReactNode;
-  onPurchaseSuccess: (ticketId: string) => void;
+  onPurchaseSuccess: (ticket: Ticket) => void;
 };
 
 const paymentMethods = [
@@ -89,8 +90,8 @@ export function TicketPurchaseDialog({ ticket, buyer, children, onPurchaseSucces
         description: `You've purchased ${ticket.ticketCount} ticket(s) for ${ticket.movieName}.`,
       });
       
-      // Notify parent component of the successful "purchase" for UI update
-      onPurchaseSuccess(ticket.id);
+      const soldTicket = { ...ticket, status: 'sold' as 'sold' };
+      onPurchaseSuccess(soldTicket);
 
       // Reset state and close dialog
       setIsPaying(false);

@@ -1,3 +1,4 @@
+
 import Image from 'next/image';
 import type { Ticket } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
@@ -8,7 +9,7 @@ import { useUser } from '@/firebase';
 
 type TicketCardProps = {
   ticket: Ticket;
-  onPurchaseSuccess: (ticketId: string) => void;
+  onPurchaseSuccess: (ticket: Ticket) => void;
 };
 
 export function TicketCard({ ticket, onPurchaseSuccess }: TicketCardProps) {

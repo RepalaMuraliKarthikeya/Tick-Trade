@@ -1,3 +1,4 @@
+
 'use client';
 
 import type { Ticket, User } from '@/lib/types';
@@ -20,7 +21,7 @@ type UserProfileProps = {
   postedTickets: Ticket[];
   purchasedTickets: Ticket[];
   isLoading: boolean;
-  onPurchaseSuccess: (ticketId: string) => void;
+  onPurchaseSuccess: (ticket: Ticket) => void;
 };
 
 function EditableUserName({ user }: { user: User }) {
@@ -123,9 +124,9 @@ export function UserProfile({ user, postedTickets, purchasedTickets, isLoading, 
   );
 }
 
-function TicketHistoryList({ tickets, emptyMessage, isLoading, onPurchaseSuccess }: { tickets: Ticket[], emptyMessage: string, isLoading: boolean, onPurchaseSuccess: (ticketId: string) => void; }) {
+function TicketHistoryList({ tickets, emptyMessage, isLoading, onPurchaseSuccess }: { tickets: Ticket[], emptyMessage: string, isLoading: boolean, onPurchaseSuccess: (ticket: Ticket) => void; }) {
   if (isLoading) {
-    return <TicketList tickets={null} isLoading={true} onPurchaseSuccess={onPurchaseSuccess} />;
+    return <TicketList tickets={null} isLoading={true} onPurchaseSuccess={() => {}} />;
   }
   
   if (tickets.length === 0) {

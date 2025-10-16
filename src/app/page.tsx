@@ -1,6 +1,7 @@
+
 "use client";
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { TicketList } from '@/components/tickets/TicketList';
 import { SearchBar } from '@/components/tickets/SearchBar';
 import { Button } from '@/components/ui/button';
@@ -63,7 +64,8 @@ export default function Home() {
     setFilteredTickets(results);
   };
   
-  const handlePurchaseSuccess = (purchasedTicketId: string) => {
+  const handlePurchaseSuccess = useCallback((purchasedTicket: Ticket) => {
+    const purchasedTicketId = purchasedTicket.id;
     const baseTickets = localTickets ?? allAvailableTickets;
     if (baseTickets) {
       const updatedTickets = baseTickets.map(ticket =>
@@ -79,7 +81,7 @@ export default function Home() {
         setFilteredTickets(updatedFiltered);
       }
     }
-  };
+  }, [localTickets, allAvailableTickets, filteredTickets]);
 
 
   return (

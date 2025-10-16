@@ -1,3 +1,4 @@
+
 "use client";
 
 import { UserProfile } from '@/components/profile/UserProfile';
@@ -63,19 +64,17 @@ export default function ProfilePage() {
     }
   }, [user, firestore]);
   
-  const handlePurchaseSuccess = useCallback(async (purchasedTicketId: string) => {
-    if (firestore) {
-      const ticketRef = doc(firestore, 'tickets', purchasedTicketId);
-      const ticketSnap = await getDoc(ticketRef);
-      if (ticketSnap.exists()) {
-        const newPurchasedTicket = { id: ticketSnap.id, ...ticketSnap.data() } as Ticket;
-        setPurchasedTickets(prev => [...prev, newPurchasedTicket]);
-        
-        // Also remove it from posted tickets if it was posted by this user
-        setPostedTickets(prev => prev.map(t => t.id === purchasedTicketId ? { ...t, status: 'sold' } : t));
-      }
-    }
-  }, [firestore]);
+  const handlePurchaseSuccess = useCallback((newlyPurchasedTicket: Ticket) => {
+    setPurchasedTickets(prev => {
+        const ticketExists = prev.some(t => t.id === newlyPurchasedTicket.id);
+        if (!ticketExists) {
+            return [...prev, newlyPurchasedTicket];
+        }
+        return prev;
+    });
+
+    setPostedTickets(prev => prev.filter(t => t.id !== newlyPurchasedTicket.id));
+  }, []);
 
 
   useEffect(() => {

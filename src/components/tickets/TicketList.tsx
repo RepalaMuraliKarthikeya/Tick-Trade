@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { Ticket } from '@/lib/types';
@@ -7,7 +8,7 @@ import { Skeleton } from '../ui/skeleton';
 type TicketListProps = {
   tickets: Ticket[] | null;
   isLoading: boolean;
-  onPurchaseSuccess: (ticketId: string) => void;
+  onPurchaseSuccess: (ticket: Ticket) => void;
 };
 
 export function TicketList({ tickets, isLoading, onPurchaseSuccess }: TicketListProps) {
