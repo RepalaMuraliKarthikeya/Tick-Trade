@@ -20,7 +20,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useFirebase, errorEmitter, FirestorePermissionError } from '@/firebase';
-import { doc, collection, writeBatch } from 'firebase/firestore';
+import { doc, collection, writeBatch, serverTimestamp } from 'firebase/firestore';
 
 type TicketPurchaseDialogProps = {
   ticket: Ticket;
@@ -88,63 +88,64 @@ export function TicketPurchaseDialog({ ticket, buyer, children }: TicketPurchase
     setIsPaying(true);
     setSelectedPaymentMethod(paymentMethod);
 
-    setTimeout(async () => {
-        const batch = writeBatch(firestore);
+    // Simulate payment processing time
+    await new Promise(resolve => setTimeout(resolve, 2000));
         
-        const ticketRef = doc(firestore, 'tickets', ticket.id);
-        const ticketUpdateData = { status: 'sold' };
-        batch.update(ticketRef, ticketUpdateData);
+    const batch = writeBatch(firestore);
+    
+    const ticketRef = doc(firestore, 'tickets', ticket.id);
+    const ticketUpdateData = { status: 'sold' };
+    batch.update(ticketRef, ticketUpdateData);
 
-        const transactionRef = doc(collection(firestore, 'transactions'));
-        const newTransaction: Omit<Transaction, 'id'> = {
-          ticketId: ticket.id,
-          buyerId: buyer.id,
-          sellerId: ticket.postedBy,
-          paymentMethod,
-          transactionDate: new Date().toISOString(),
-          amount: ticket.ticketPrice * ticket.ticketCount,
-        };
-        batch.set(transactionRef, newTransaction);
+    const transactionRef = doc(collection(firestore, 'transactions'));
+    const newTransaction: Omit<Transaction, 'id'> = {
+      ticketId: ticket.id,
+      buyerId: buyer.id,
+      sellerId: ticket.postedBy,
+      paymentMethod,
+      transactionDate: new Date().toISOString(),
+      amount: ticket.ticketPrice * ticket.ticketCount,
+    };
+    batch.set(transactionRef, newTransaction);
 
-        const userPurchasedRef = doc(
-          firestore,
-          `users/${buyer.id}/purchased_tickets/${transactionRef.id}`
-        );
-        const userPurchasedData = { ...newTransaction, id: transactionRef.id };
-        batch.set(userPurchasedRef, userPurchasedData);
+    const userPurchasedRef = doc(
+      firestore,
+      `users/${buyer.id}/purchased_tickets/${transactionRef.id}`
+    );
+    const userPurchasedData = { ...newTransaction, id: transactionRef.id };
+    batch.set(userPurchasedRef, userPurchasedData);
 
-        batch.commit()
-          .then(() => {
-            toast({
-              title: 'Payment Successful!',
-              description: `You've purchased ${ticket.ticketCount} ticket(s) for ${ticket.movieName}.`,
-            });
-            router.refresh();
-          })
-          .catch((error) => {
-             // We can't know which write failed, so we'll report the most likely ones
-            errorEmitter.emit('permission-error', new FirestorePermissionError({
-                path: ticketRef.path,
-                operation: 'update',
-                requestResourceData: ticketUpdateData
-            }));
-            errorEmitter.emit('permission-error', new FirestorePermissionError({
-                path: transactionRef.path,
-                operation: 'create',
-                requestResourceData: newTransaction
-            }));
-            errorEmitter.emit('permission-error', new FirestorePermissionError({
-                path: userPurchasedRef.path,
-                operation: 'create',
-                requestResourceData: userPurchasedData
-            }));
-          })
-          .finally(() => {
-            setIsPaying(false);
-            setIsDialogOpen(false);
-            setSelectedPaymentMethod(null);
-          });
-    }, 2000);
+    try {
+      await batch.commit();
+      
+      toast({
+        title: 'Payment Successful!',
+        description: `You've purchased ${ticket.ticketCount} ticket(s) for ${ticket.movieName}.`,
+      });
+      router.refresh();
+
+    } catch (error) {
+       // We can't know which write failed, so we'll report the most likely ones
+      errorEmitter.emit('permission-error', new FirestorePermissionError({
+          path: ticketRef.path,
+          operation: 'update',
+          requestResourceData: ticketUpdateData
+      }));
+      errorEmitter.emit('permission-error', new FirestorePermissionError({
+          path: transactionRef.path,
+          operation: 'create',
+          requestResourceData: newTransaction
+      }));
+      errorEmitter.emit('permission-error', new FirestorePermissionError({
+          path: userPurchasedRef.path,
+          operation: 'create',
+          requestResourceData: userPurchasedData
+      }));
+    } finally {
+      setIsPaying(false);
+      setIsDialogOpen(false);
+      setSelectedPaymentMethod(null);
+    }
   };
   
   const handleTriggerClick = (e: React.MouseEvent) => {
