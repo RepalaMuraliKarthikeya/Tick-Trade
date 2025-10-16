@@ -37,14 +37,19 @@ export interface InternalQuery extends Query<DocumentData> {
   }
 }
 
+// Type guard to check for memoization marker
+function isMemoized(value: any): boolean {
+  return typeof value === 'object' && value !== null && (value as any).__memo === true;
+}
+
+
 /**
  * React hook to subscribe to a Firestore collection or query in real-time.
  * Handles nullable references/queries.
  * 
  *
- * IMPORTANT! YOU MUST MEMOIZE the inputted memoizedTargetRefOrQuery or BAD THINGS WILL HAPPEN
- * use useMemo to memoize it per React guidence.  Also make sure that it's dependencies are stable
- * references
+ * IMPORTANT! YOU MUST MEMOIZE the inputted targetRefOrQuery (e.g. with useMemo or useMemoFirebase)
+ * or this hook will cause an infinite render loop.
  *  
  * @template T Optional type for document data. Defaults to any.
  * @param {CollectionReference<DocumentData> | Query<DocumentData> | null | undefined} targetRefOrQuery -
@@ -62,11 +67,26 @@ export function useCollection<T = any>(
   const [error, setError] = useState<FirestoreError | Error | null>(null);
 
   useEffect(() => {
+    // If the reference is not provided, reset state.
     if (!targetRefOrQuery) {
       setData(null);
       setIsLoading(false);
       setError(null);
       return;
+    }
+    
+    // DEV-ONLY CHECK: Ensure the reference is memoized to prevent infinite loops.
+    // This is a critical developer safeguard.
+    if (process.env.NODE_ENV === 'development' && !isMemoized(targetRefOrQuery)) {
+        console.error(
+          'useCollection Error: The query or collection reference passed to useCollection must be memoized with useMemo or useMemoFirebase to prevent infinite loops. The reference changed identity between renders.',
+          targetRefOrQuery
+        );
+        // Set an error state to make the issue visible in the UI
+        setError(new Error('useCollection requires a memoized query. See console for details.'));
+        setIsLoading(false);
+        setData(null);
+        return; // Halt execution of the effect
     }
 
     setIsLoading(true);

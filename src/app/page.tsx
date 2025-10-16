@@ -30,7 +30,13 @@ export default function Home() {
   const [filteredTickets, setFilteredTickets] = useState<Ticket[] | null>(null);
 
   const ticketsToDisplay = useMemo(() => {
-    return filteredTickets !== null ? filteredTickets : allAvailableTickets;
+    const sourceTickets = filteredTickets !== null ? filteredTickets : allAvailableTickets;
+    // Ensure we have an array to work with, even if it's empty
+    if (!sourceTickets) {
+      return [];
+    }
+    // Add the id back to the ticket objects for use in components
+    return sourceTickets.map(t => ({ ...t, id: (t as any).id || '' }));
   }, [filteredTickets, allAvailableTickets]);
 
   const handleSearch = (searchQuery: string) => {
