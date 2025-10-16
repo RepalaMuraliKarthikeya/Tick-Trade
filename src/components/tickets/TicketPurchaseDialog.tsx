@@ -97,71 +97,69 @@ export function TicketPurchaseDialog({ ticket, buyer, children }: TicketPurchase
     setIsPaying(true);
     setSelectedPaymentMethod(paymentMethod);
 
-    try {
-        // Use a batch write to perform multiple operations atomically
-        const batch = writeBatch(firestore);
+    const batch = writeBatch(firestore);
 
-        // 1. Create a new transaction document
-        const transactionRef = doc(collection(firestore, 'transactions'));
-        const newTransaction: Omit<Transaction, 'id'> & { transactionDate: any } = {
-            ticketId: ticket.id,
-            buyerId: buyer.id,
-            sellerId: ticket.postedBy,
-            paymentMethod: paymentMethod,
-            transactionDate: serverTimestamp(),
-            amount: ticket.ticketPrice * ticket.ticketCount,
-        };
-        batch.set(transactionRef, newTransaction);
-        
-        // 2. Add a record to the user's purchased_tickets subcollection
-        const userPurchasedRef = doc(collection(firestore, `users/${buyer.id}/purchased_tickets`));
-        const userPurchasedData = {
-            ticketId: ticket.id,
-            transactionId: transactionRef.id,
-            purchaseDate: serverTimestamp(),
-        };
-        batch.set(userPurchasedRef, userPurchasedData);
+    // 1. Create a new transaction document
+    const transactionRef = doc(collection(firestore, 'transactions'));
+    const newTransaction: Omit<Transaction, 'id'> & { transactionDate: any } = {
+        ticketId: ticket.id,
+        buyerId: buyer.id,
+        sellerId: ticket.postedBy,
+        paymentMethod: paymentMethod,
+        transactionDate: serverTimestamp(),
+        amount: ticket.ticketPrice * ticket.ticketCount,
+    };
+    batch.set(transactionRef, newTransaction);
+    
+    // 2. Add a record to the user's purchased_tickets subcollection
+    const userPurchasedRef = doc(collection(firestore, `users/${buyer.id}/purchased_tickets`));
+    const userPurchasedData = {
+        ticketId: ticket.id,
+        transactionId: transactionRef.id,
+        purchaseDate: serverTimestamp(),
+    };
+    batch.set(userPurchasedRef, userPurchasedData);
 
-        // 3. Update the ticket's status to 'sold'
-        const ticketRef = doc(firestore, 'tickets', ticket.id);
-        batch.update(ticketRef, { status: 'sold' });
+    // 3. Update the ticket's status to 'sold'
+    const ticketRef = doc(firestore, 'tickets', ticket.id);
+    batch.update(ticketRef, { status: 'sold' });
 
-        // Commit the batch
-        await batch.commit();
+    // Commit the batch and handle potential errors
+    batch.commit()
+      .then(() => {
+          toast({
+              title: 'Payment Successful!',
+              description: `You've purchased ${ticket.ticketCount} ticket(s) for ${ticket.movieName}.`,
+          });
+          router.refresh();
+          setIsDialogOpen(false);
+      })
+      .catch((error) => {
+          console.error("Firestore batch write failed:", error);
+          
+          // This is a generic error handler for any failure during the batch write.
+          const permissionError = new FirestorePermissionError({
+              path: `transactions (batch operation)`,
+              operation: 'write',
+              requestResourceData: { 
+                  ticketId: ticket.id, 
+                  buyerId: buyer.id, 
+                  ticketStatusUpdate: { status: 'sold' }
+              },
+          });
+          errorEmitter.emit('permission-error', permissionError);
 
-        toast({
-            title: 'Payment Successful!',
-            description: `You've purchased ${ticket.ticketCount} ticket(s) for ${ticket.movieName}.`,
-        });
-
-        router.refresh();
-        setIsDialogOpen(false);
-
-    } catch (error) {
-        console.error("Firestore batch write failed:", error);
-        
-        // This is a generic error handler for any failure during the batch write.
-        const permissionError = new FirestorePermissionError({
-            path: `transactions (batch operation)`,
-            operation: 'write',
-            requestResourceData: { 
-                ticketId: ticket.id, 
-                buyerId: buyer.id, 
-                ticketStatusUpdate: { status: 'sold' }
-            },
-        });
-        errorEmitter.emit('permission-error', permissionError);
-
-        // Also show a user-friendly error message
-        toast({
-            variant: 'destructive',
-            title: 'Payment Failed',
-            description: 'There was an error processing your purchase. Please try again.',
-        });
-    } finally {
-        setIsPaying(false);
-        setSelectedPaymentMethod(null);
-    }
+          // Also show a user-friendly error message
+          toast({
+              variant: 'destructive',
+              title: 'Payment Failed',
+              description: 'There was an error processing your purchase. Please try again.',
+          });
+      })
+      .finally(() => {
+          setIsPaying(false);
+          setSelectedPaymentMethod(null);
+      });
   };
   
   const handleTriggerClick = (e: React.MouseEvent) => {
