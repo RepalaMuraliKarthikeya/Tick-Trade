@@ -126,7 +126,7 @@ export function UserProfile({ user, postedTickets, purchasedTickets, isLoading, 
 
 function TicketHistoryList({ tickets, emptyMessage, isLoading, onPurchaseSuccess }: { tickets: Ticket[], emptyMessage: string, isLoading: boolean, onPurchaseSuccess: (ticket: Ticket) => void; }) {
   if (isLoading) {
-    return <TicketList tickets={null} isLoading={true} onPurchaseSuccess={() => {}} />;
+    return <TicketList tickets={null} isLoading={true} onPurchaseSuccess={onPurchaseSuccess} />;
   }
   
   if (tickets.length === 0) {
