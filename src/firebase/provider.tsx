@@ -154,16 +154,46 @@ export const useFirebaseApp = (): FirebaseApp => {
   return firebaseApp;
 };
 
-type MemoFirebase <T> = T & {__memo?: boolean};
+// This symbol is used to attach a marker to a memoized value.
+const MEMOIZED_SYMBOL = Symbol('memoized');
 
-export function useMemoFirebase<T>(factory: () => T, deps: DependencyList): T | (MemoFirebase<T>) {
-  const memoized = useMemo(factory, deps);
-  
-  if(typeof memoized !== 'object' || memoized === null) return memoized;
-  (memoized as MemoFirebase<T>).__memo = true;
-  
-  return memoized;
+/**
+ * A specialized version of `useMemo` for Firestore queries and references.
+ * It "tags" the created object with a symbol to indicate it has been memoized.
+ * This allows hooks like `useCollection` and `useDoc` to verify that they are
+ * receiving a stable reference, preventing infinite render loops.
+ *
+ * @param factory The function that creates the Firestore query or document reference.
+ * @param deps The dependency array for `useMemo`.
+ * @returns The memoized Firestore query or reference.
+ */
+export function useMemoFirebase<T>(factory: () => T, deps: DependencyList): T {
+    const memoized = useMemo(() => {
+        const value = factory();
+        if (value && typeof value === 'object') {
+            // Attach a non-enumerable property to mark this object as memoized.
+            Object.defineProperty(value, MEMOIZED_SYMBOL, {
+                value: true,
+                configurable: true,
+                enumerable: false,
+                writable: false,
+            });
+        }
+        return value;
+    }, deps);
+
+    return memoized;
 }
+
+/**
+ * Checks if a value was created by `useMemoFirebase`.
+ * @param value The value to check.
+ * @returns `true` if the value is marked as memoized, `false` otherwise.
+ */
+export function isMemoizedByFirebase(value: unknown): boolean {
+    return value !== null && typeof value === 'object' && (value as any)[MEMOIZED_SYMBOL] === true;
+}
+
 
 /**
  * Hook specifically for accessing the authenticated user's state.

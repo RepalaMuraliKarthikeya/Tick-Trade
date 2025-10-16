@@ -24,7 +24,7 @@ export default function TicketDetailsPage({ params }: { params: { id: string } }
   const sellerRef = useMemoFirebase(() => {
     if (!firestore || !ticket?.postedBy) return null;
     return doc(firestore, 'users', ticket.postedBy);
-  }, [firestore, ticket]);
+  }, [firestore, ticket?.postedBy]);
 
   const { data: seller, isLoading: isSellerLoading } = useDoc<User>(sellerRef);
 

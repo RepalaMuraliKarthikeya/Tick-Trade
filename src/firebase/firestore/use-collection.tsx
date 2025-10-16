@@ -11,6 +11,7 @@ import {
 } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
+import { isMemoizedByFirebase } from '@/firebase/provider';
 
 /** Utility type to add an 'id' field to a given type T. */
 export type WithId<T> = T & { id: string };
@@ -36,12 +37,6 @@ export interface InternalQuery extends Query<DocumentData> {
     }
   }
 }
-
-// Type guard to check for memoization marker
-function isMemoized(value: any): boolean {
-  return typeof value === 'object' && value !== null && (value as any).__memo === true;
-}
-
 
 /**
  * React hook to subscribe to a Firestore collection or query in real-time.
@@ -77,9 +72,9 @@ export function useCollection<T = any>(
     
     // DEV-ONLY CHECK: Ensure the reference is memoized to prevent infinite loops.
     // This is a critical developer safeguard.
-    if (process.env.NODE_ENV === 'development' && !isMemoized(targetRefOrQuery)) {
+    if (process.env.NODE_ENV === 'development' && !isMemoizedByFirebase(targetRefOrQuery)) {
         console.error(
-          'useCollection Error: The query or collection reference passed to useCollection must be memoized with useMemo or useMemoFirebase to prevent infinite loops. The reference changed identity between renders.',
+          'useCollection Error: The query or collection reference passed to useCollection must be memoized with `useMemoFirebase` to prevent infinite loops. The reference changed identity between renders.',
           targetRefOrQuery
         );
         // Set an error state to make the issue visible in the UI
