@@ -29,8 +29,6 @@ export function Navbar() {
   const router = useRouter();
 
   const handleLogout = async () => {
-    // Critical change: Check auth.currentUser directly.
-    // This is more reliable than the useUser hook's state during the exact moment of an action.
     const currentUser = auth.currentUser;
 
     if (!currentUser || !firestore) {
@@ -40,14 +38,12 @@ export function Navbar() {
     
     try {
       const userId = currentUser.uid;
-      // Log the activity first
-      await logUserActivity(firestore, userId, 'logout');
+      // Do not await here to prevent race conditions with sign-out
+      logUserActivity(firestore, userId, 'logout');
       
-      // Then sign out
       await signOut(auth);
       
       toast({ title: 'Logged out successfully' });
-      // Redirect to home page after successful logout
       router.push('/');
     } catch (error) {
       console.error("Error signing out: ", error);
