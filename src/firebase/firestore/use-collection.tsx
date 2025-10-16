@@ -58,7 +58,7 @@ export function useCollection<T = any>(
   type StateDataType = ResultItemType[] | null;
 
   const [data, setData] = useState<StateDataType>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<FirestoreError | Error | null>(null);
 
   useEffect(() => {
@@ -70,20 +70,6 @@ export function useCollection<T = any>(
       return;
     }
     
-    // DEV-ONLY CHECK: Ensure the reference is memoized to prevent infinite loops.
-    // This is a critical developer safeguard.
-    if (process.env.NODE_ENV === 'development' && !isMemoizedByFirebase(targetRefOrQuery)) {
-        console.error(
-          'useCollection Error: The query or collection reference passed to useCollection must be memoized with `useMemoFirebase` to prevent infinite loops. The reference changed identity between renders.',
-          targetRefOrQuery
-        );
-        // Set an error state to make the issue visible in the UI
-        setError(new Error('useCollection requires a memoized query. See console for details.'));
-        setIsLoading(false);
-        setData(null);
-        return; // Halt execution of the effect
-    }
-
     setIsLoading(true);
     setError(null);
 
