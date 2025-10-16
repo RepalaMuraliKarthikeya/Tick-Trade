@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import Image from 'next/image';
 import type { Ticket } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
@@ -20,7 +19,7 @@ export function TicketCard({ ticket }: TicketCardProps) {
   return (
     <div className="group block">
       <Card className="overflow-hidden h-full transition-all duration-300 ease-in-out group-hover:shadow-xl group-hover:shadow-primary/20 group-hover:-translate-y-2 bg-card/50 backdrop-blur-sm border-white/10">
-        <Link href={`/tickets/${ticket.id}`} className="block relative aspect-[2/3] w-full">
+        <div className="block relative aspect-[2/3] w-full">
           <Image
             src={ticket.posterImageUrl}
             alt={ticket.movieName}
@@ -30,7 +29,7 @@ export function TicketCard({ ticket }: TicketCardProps) {
             data-ai-hint={ticket.imageHint}
           />
            <div className="absolute bottom-0 left-0 right-0 h-2/3 bg-gradient-to-t from-black/90 to-transparent"></div>
-        </Link>
+        </div>
         <CardContent className="p-4 space-y-3">
             <div className="min-h-[64px]">
               <TicketPurchaseDialog ticket={ticket} buyer={currentBuyer}>
