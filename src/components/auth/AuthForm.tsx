@@ -52,31 +52,41 @@ export function AuthForm({ mode }: AuthFormProps) {
   });
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
+    if (!firestore) {
+      toast({ variant: "destructive", title: "Error", description: "Database not available." });
+      return;
+    }
+
     startTransition(async () => {
       try {
         let userCredential;
         if (mode === 'login') {
           userCredential = await signInWithEmailAndPassword(auth, values.email, values.password);
-        } else {
+          const user = userCredential.user;
+          // Ensure user profile is created/updated on login as well
+          const userRef = doc(firestore, 'users', user.uid);
+          await setDoc(userRef, {
+            id: user.uid,
+            name: user.displayName,
+            email: user.email,
+          }, { merge: true });
+
+        } else { // signup mode
           userCredential = await createUserWithEmailAndPassword(auth, values.email, values.password);
           const user = userCredential.user;
           const nameToSet = values.name || values.email.split('@')[0];
           await updateProfile(user, { displayName: nameToSet });
           
-          if(firestore) {
-            const userRef = doc(firestore, 'users', user.uid);
-            await setDoc(userRef, {
-              id: user.uid,
-              name: nameToSet,
-              email: user.email,
-            }, { merge: true });
-          }
+          const userRef = doc(firestore, 'users', user.uid);
+          await setDoc(userRef, {
+            id: user.uid,
+            name: nameToSet,
+            email: user.email,
+          }, { merge: true });
         }
         
         const user = userCredential.user;
-        if (firestore && user) {
-          await logUserActivity(firestore, user.uid, 'login');
-        }
+        await logUserActivity(firestore, user.uid, 'login');
 
         toast({
           title: mode === 'login' ? "Login Successful" : "Signup Successful",
@@ -89,6 +99,7 @@ export function AuthForm({ mode }: AuthFormProps) {
             switch (error.code) {
                 case 'auth/user-not-found':
                 case 'auth/wrong-password':
+                case 'auth/invalid-credential':
                     errorMessage = 'Invalid email or password.';
                     break;
                 case 'auth/email-already-in-use':
