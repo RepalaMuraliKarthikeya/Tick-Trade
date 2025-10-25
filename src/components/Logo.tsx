@@ -1,3 +1,5 @@
+{/* Logo */}
+
 import { Film } from 'lucide-react';
 import Link from 'next/link';
 
