@@ -21,7 +21,7 @@ export default function ProfilePage() {
   // Use the useCollection hook for real-time updates on purchased tickets
   const purchasedTicketsQuery = useMemoFirebase(() => {
     if (user && firestore) {
-      return query(collection(firestore, `users/${user.uid}/purchased_tickets`));
+      return collection(firestore, `users/${user.uid}/purchased_tickets`);
     }
     return null;
   }, [user, firestore]);
@@ -41,7 +41,7 @@ export default function ProfilePage() {
   const fetchPostedTickets = useCallback(async () => {
     if (user && firestore) {
       setIsLoadingPosted(true);
-      const q = query(collection(firestore, 'tickets'), where('postedBy', '==', user.uid), where('status', '==', 'available'));
+      const q = query(collection(firestore, 'tickets'), where('postedBy', '==', user.uid));
       const querySnapshot = await getDocs(q);
       const tickets = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Ticket));
       setPostedTickets(tickets);
@@ -59,6 +59,12 @@ export default function ProfilePage() {
       }
       
       const ticketIds = purchasedTransactions.map(t => t.ticketId);
+      if (ticketIds.length === 0) {
+        setPurchasedTickets([]);
+        setIsLoadingPurchased(false);
+        return;
+      }
+      
       const fetchedTickets: Ticket[] = [];
       
       // Firestore 'in' query is limited to 30 items. 
@@ -72,20 +78,18 @@ export default function ProfilePage() {
 
       setPurchasedTickets(fetchedTickets);
       setIsLoadingPurchased(false);
-    } else if (!purchasedTransactions) {
+    } else if (!isLoadingPurchasedTransactions) {
       // Handle the case where there are no transactions yet
       setPurchasedTickets([]);
       setIsLoadingPurchased(false);
     }
-  }, [purchasedTransactions, firestore]);
+  }, [purchasedTransactions, firestore, isLoadingPurchasedTransactions]);
 
   const handlePurchaseSuccess = useCallback((purchasedTicket: Ticket) => {
-    // This function will be called after a successful purchase.
-    // The useCollection hook for purchased tickets will update automatically.
-    // We just need to remove the ticket from the locally managed "posted" list.
-    setPostedTickets(prev => prev.filter(t => t.id !== purchasedTicket.id));
+    // This function is now primarily to optimistically update UI if needed.
+    // The useCollection hooks will handle the actual data synchronization from Firestore.
+    setPostedTickets(prev => prev.map(t => t.id === purchasedTicket.id ? { ...t, status: 'sold'} : t));
   }, []);
-
 
   useEffect(() => {
     fetchPostedTickets();
