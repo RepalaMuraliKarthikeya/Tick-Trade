@@ -44,7 +44,7 @@ const paymentMethods = [
       >
         <title>Google Pay</title>
         <path
-          d="M19.365 9.686l-2.074-2.075a.31.31 0 00-.464 0l-3.26 3.26-3.23-3.23a.309.309 0 00-.464 0L7.799 9.752a.31.31 0 000 .464l2.046 2.046-2.046 2.046a.31.31 0 000 .464l2.074 2.074a.31.31 0 00.464 0l3.26-3.26 3.23 3.23a.31.31 0 00.464 0l2.074-2.074a.31.31 0 000-.464l-2.046-2.046 2.046-2.046a.326.326 0 000-.464z"
+          d="M19.365 9.686l-2.074-2.075a.31.31 0 00-.464 0l-3.26 3.26-3.23-3.23a.309.309 0 00-.464 0L7.799 9.752a.31.31 0 000 .464l2.046 2.046-2.046 2.046a.31.31: 0 000 .464l2.074 2.074a.31.31 0 00.464 0l3.26-3.26 3.23 3.23a.31.31 0 00.464 0l2.074-2.074a.31.31 0 000-.464l-2.046-2.046 2.046-2.046a.326.326 0 000-.464z"
           fill="#367af6"
         />
       </svg>
@@ -93,68 +93,68 @@ export function TicketPurchaseDialog({ ticket, buyer, children, onPurchaseSucces
     setIsPaying(true);
     setSelectedPaymentMethod(paymentMethod);
 
-    try {
-      // Create a batch write operation
-      const batch = writeBatch(firestore);
+    // Create a batch write operation
+    const batch = writeBatch(firestore);
 
-      // 1. Update the ticket status to 'sold'
-      const ticketRef = doc(firestore, 'tickets', ticket.id);
-      batch.update(ticketRef, { status: 'sold' });
+    // 1. Update the ticket status to 'sold'
+    const ticketRef = doc(firestore, 'tickets', ticket.id);
+    const ticketUpdate = { status: 'sold' };
+    batch.update(ticketRef, ticketUpdate);
 
-      // 2. Create a new transaction document
-      const transactionRef = doc(collection(firestore, 'transactions'));
-      const newTransaction: Omit<Transaction, 'id'> = {
-        ticketId: ticket.id,
-        buyerId: buyer.id,
-        sellerId: ticket.postedBy,
-        paymentMethod: paymentMethod,
-        transactionDate: new Date().toISOString(),
-        amount: ticket.ticketPrice * ticket.ticketCount,
-      };
-      batch.set(transactionRef, newTransaction);
-      
-      // 3. Add the transaction to the user's purchased_tickets subcollection
-      const userPurchasedTicketRef = doc(collection(firestore, `users/${buyer.id}/purchased_tickets`));
-      batch.set(userPurchasedTicketRef, { ...newTransaction, id: transactionRef.id });
+    // 2. Create a new transaction document
+    const transactionRef = doc(collection(firestore, 'transactions'));
+    const newTransaction: Omit<Transaction, 'id'> = {
+      ticketId: ticket.id,
+      buyerId: buyer.id,
+      sellerId: ticket.postedBy,
+      paymentMethod: paymentMethod,
+      transactionDate: new Date().toISOString(),
+      amount: ticket.ticketPrice * ticket.ticketCount,
+    };
+    batch.set(transactionRef, newTransaction);
+    
+    // 3. Add the transaction to the user's purchased_tickets subcollection
+    const userPurchasedTicketRef = doc(collection(firestore, `users/${buyer.id}/purchased_tickets`));
+    const userPurchaseRecord = { ...newTransaction, id: transactionRef.id };
+    batch.set(userPurchasedTicketRef, userPurchaseRecord);
 
 
-      // Commit the batch
-      await batch.commit();
-
-      toast({
-        title: 'Payment Successful!',
-        description: `You've purchased ${ticket.ticketCount} ticket(s) for ${ticket.movieName}.`,
-      });
-
-      const soldTicket = { ...ticket, status: 'sold' as 'sold' };
-      onPurchaseSuccess(soldTicket);
-
-      setIsDialogOpen(false);
-
-    } catch (error) {
-      console.error('Payment failed:', error);
-       // Create a detailed error for debugging
-       const permissionError = new FirestorePermissionError({
-        path: `BATCH WRITE on /tickets/${ticket.id} and others`,
-        operation: 'write', 
-        requestResourceData: { 
-          ticketUpdate: { status: 'sold' },
-          newTransaction: 'details omitted for brevity'
-        }
-      });
-
-      // Emit the error so the listener can catch it
-      errorEmitter.emit('permission-error', permissionError);
-
-      toast({
-        variant: 'destructive',
-        title: 'Payment Failed',
-        description: 'Could not complete the purchase. Please try again.',
-      });
-    } finally {
+    // Commit the batch and handle potential errors
+    batch.commit().then(() => {
+        toast({
+          title: 'Payment Successful!',
+          description: `You've purchased ${ticket.ticketCount} ticket(s) for ${ticket.movieName}.`,
+        });
+  
+        const soldTicket = { ...ticket, status: 'sold' as 'sold' };
+        onPurchaseSuccess(soldTicket);
+  
+        setIsDialogOpen(false);
+    }).catch(error => {
+        // Create a detailed error for debugging
+        const permissionError = new FirestorePermissionError({
+          path: `BATCH WRITE on /tickets/${ticket.id}, /transactions/${transactionRef.id}, and /users/${buyer.id}/purchased_tickets/${userPurchasedTicketRef.id}`,
+          operation: 'write', 
+          requestResourceData: { 
+            ticketUpdate,
+            newTransaction,
+            userPurchaseRecord
+          }
+        });
+  
+        // Emit the error so the listener can catch it
+        errorEmitter.emit('permission-error', permissionError);
+  
+        // Show a generic failure message to the user
+        toast({
+          variant: 'destructive',
+          title: 'Payment Failed',
+          description: 'Could not complete the purchase. Please try again.',
+        });
+    }).finally(() => {
       setIsPaying(false);
       setSelectedPaymentMethod(null);
-    }
+    });
   };
 
   const handleTriggerClick = (e: React.MouseEvent) => {
