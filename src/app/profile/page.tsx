@@ -2,12 +2,13 @@
 "use client";
 
 import { UserProfile } from '@/components/profile/UserProfile';
-import { useUser, useFirestore } from '@/firebase';
+import { useUser, useFirestore, useCollection } from '@/firebase';
 import type { Ticket, Transaction } from '@/lib/types';
 import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useMemoFirebase } from '@/firebase/provider';
 
 export default function ProfilePage() {
   const { user, isUserLoading, userError } = useUser();
@@ -15,9 +16,21 @@ export default function ProfilePage() {
   const router = useRouter();
 
   const [postedTickets, setPostedTickets] = useState<Ticket[]>([]);
-  const [purchasedTickets, setPurchasedTickets] = useState<Ticket[]>([]);
   const [isLoadingPosted, setIsLoadingPosted] = useState(true);
+
+  // Use the useCollection hook for real-time updates on purchased tickets
+  const purchasedTicketsQuery = useMemoFirebase(() => {
+    if (user && firestore) {
+      return query(collection(firestore, `users/${user.uid}/purchased_tickets`));
+    }
+    return null;
+  }, [user, firestore]);
+
+  const { data: purchasedTransactions, isLoading: isLoadingPurchasedTransactions } = useCollection<Transaction>(purchasedTicketsQuery);
+
+  const [purchasedTickets, setPurchasedTickets] = useState<Ticket[]>([]);
   const [isLoadingPurchased, setIsLoadingPurchased] = useState(true);
+
 
   useEffect(() => {
     if (!isUserLoading && !user) {
@@ -36,36 +49,51 @@ export default function ProfilePage() {
     }
   }, [user, firestore]);
 
-  const fetchPurchasedTickets = useCallback(async () => {
-    if (user && firestore) {
+  const fetchFullPurchasedTickets = useCallback(async () => {
+    if (purchasedTransactions && firestore) {
       setIsLoadingPurchased(true);
-      // In our dummy flow, we start with an empty list of purchased tickets.
-      // In a real scenario with a working backend, you'd fetch this from Firestore.
+      if (purchasedTransactions.length === 0) {
+        setPurchasedTickets([]);
+        setIsLoadingPurchased(false);
+        return;
+      }
+      
+      const ticketIds = purchasedTransactions.map(t => t.ticketId);
+      const fetchedTickets: Ticket[] = [];
+      
+      // Firestore 'in' query is limited to 30 items. 
+      // If you expect users to purchase more, you'd need to batch this.
+      const ticketsQuery = query(collection(firestore, 'tickets'), where('__name__', 'in', ticketIds));
+      const ticketSnapshots = await getDocs(ticketsQuery);
+      
+      ticketSnapshots.forEach(doc => {
+        fetchedTickets.push({ id: doc.id, ...doc.data() } as Ticket);
+      });
+
+      setPurchasedTickets(fetchedTickets);
+      setIsLoadingPurchased(false);
+    } else if (!purchasedTransactions) {
+      // Handle the case where there are no transactions yet
       setPurchasedTickets([]);
       setIsLoadingPurchased(false);
     }
-  }, [user, firestore]);
-  
-  const handlePurchaseSuccess = useCallback((newlyPurchasedTicket: Ticket) => {
-    // Add the ticket to the 'purchased' list.
-    setPurchasedTickets(prev => {
-        // Avoid adding duplicates if the event fires multiple times
-        const ticketExists = prev.some(t => t.id === newlyPurchasedTicket.id);
-        if (!ticketExists) {
-            return [...prev, newlyPurchasedTicket];
-        }
-        return prev;
-    });
+  }, [purchasedTransactions, firestore]);
 
-    // Remove the ticket from the 'posted' list, as it's now sold.
-    setPostedTickets(prev => prev.filter(t => t.id !== newlyPurchasedTicket.id));
+  const handlePurchaseSuccess = useCallback((purchasedTicket: Ticket) => {
+    // This function will be called after a successful purchase.
+    // The useCollection hook for purchased tickets will update automatically.
+    // We just need to remove the ticket from the locally managed "posted" list.
+    setPostedTickets(prev => prev.filter(t => t.id !== purchasedTicket.id));
   }, []);
 
 
   useEffect(() => {
     fetchPostedTickets();
-    fetchPurchasedTickets();
-  }, [fetchPostedTickets, fetchPurchasedTickets]);
+  }, [fetchPostedTickets]);
+
+  useEffect(() => {
+    fetchFullPurchasedTickets();
+  }, [fetchFullPurchasedTickets]);
 
   if (isUserLoading || !user) {
     return (
@@ -95,13 +123,15 @@ export default function ProfilePage() {
     email: user.email,
   };
 
+  const isLoading = isLoadingPosted || isLoadingPurchasedTransactions || isLoadingPurchased;
+
   return (
     <div className="container mx-auto py-12">
       <UserProfile
         user={userProfile}
         postedTickets={postedTickets}
         purchasedTickets={purchasedTickets}
-        isLoading={isLoadingPosted || isLoadingPurchased}
+        isLoading={isLoading}
         onPurchaseSuccess={handlePurchaseSuccess}
       />
     </div>

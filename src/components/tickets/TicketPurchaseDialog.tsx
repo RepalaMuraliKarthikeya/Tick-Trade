@@ -1,7 +1,7 @@
 
 'use client';
 
-import type { Ticket, User } from '@/lib/types';
+import type { Ticket, User, Transaction } from '@/lib/types';
 import { Banknote, CreditCard, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,6 +16,10 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { useFirebase } from '@/firebase';
+import { collection, doc, writeBatch } from 'firebase/firestore';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 type TicketPurchaseDialogProps = {
   ticket: Ticket;
@@ -55,6 +59,7 @@ const paymentMethods = [
 export function TicketPurchaseDialog({ ticket, buyer, children, onPurchaseSuccess }: TicketPurchaseDialogProps) {
   const router = useRouter();
   const { toast } = useToast();
+  const { firestore } = useFirebase();
 
   const [isPaying, setIsPaying] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -80,36 +85,94 @@ export function TicketPurchaseDialog({ ticket, buyer, children, onPurchaseSucces
       return;
     }
 
+     if (!firestore) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Database not available.' });
+      return;
+    }
+
     setIsPaying(true);
     setSelectedPaymentMethod(paymentMethod);
 
-    // Simulate payment processing with a 2-second delay
-    setTimeout(() => {
+    try {
+      // Create a batch write operation
+      const batch = writeBatch(firestore);
+
+      // 1. Update the ticket status to 'sold'
+      const ticketRef = doc(firestore, 'tickets', ticket.id);
+      batch.update(ticketRef, { status: 'sold' });
+
+      // 2. Create a new transaction document
+      const transactionRef = doc(collection(firestore, 'transactions'));
+      const newTransaction: Omit<Transaction, 'id'> = {
+        ticketId: ticket.id,
+        buyerId: buyer.id,
+        sellerId: ticket.postedBy,
+        paymentMethod: paymentMethod,
+        transactionDate: new Date().toISOString(),
+        amount: ticket.ticketPrice * ticket.ticketCount,
+      };
+      batch.set(transactionRef, newTransaction);
+      
+      // 3. Add the transaction to the user's purchased_tickets subcollection
+      const userPurchasedTicketRef = doc(collection(firestore, `users/${buyer.id}/purchased_tickets`));
+      batch.set(userPurchasedTicketRef, { ...newTransaction, id: transactionRef.id });
+
+
+      // Commit the batch
+      await batch.commit();
+
       toast({
         title: 'Payment Successful!',
         description: `You've purchased ${ticket.ticketCount} ticket(s) for ${ticket.movieName}.`,
       });
-      
+
       const soldTicket = { ...ticket, status: 'sold' as 'sold' };
       onPurchaseSuccess(soldTicket);
 
-      // Reset state and close dialog
+      setIsDialogOpen(false);
+
+    } catch (error) {
+      console.error('Payment failed:', error);
+       // Create a detailed error for debugging
+       const permissionError = new FirestorePermissionError({
+        path: `BATCH WRITE on /tickets/${ticket.id} and others`,
+        operation: 'write', 
+        requestResourceData: { 
+          ticketUpdate: { status: 'sold' },
+          newTransaction: 'details omitted for brevity'
+        }
+      });
+
+      // Emit the error so the listener can catch it
+      errorEmitter.emit('permission-error', permissionError);
+
+      toast({
+        variant: 'destructive',
+        title: 'Payment Failed',
+        description: 'Could not complete the purchase. Please try again.',
+      });
+    } finally {
       setIsPaying(false);
       setSelectedPaymentMethod(null);
-      setIsDialogOpen(false);
-    }, 2000);
+    }
   };
 
   const handleTriggerClick = (e: React.MouseEvent) => {
-    if (ticket.status === 'sold' || buyer?.id === ticket.postedBy) {
+    if (ticket.status === 'sold') {
       e.preventDefault();
       toast({
         variant: 'destructive',
-        title: ticket.status === 'sold' ? 'Ticket Sold' : 'Cannot Buy Own Ticket',
-        description:
-          ticket.status === 'sold'
-            ? 'This ticket is no longer available.'
-            : 'You cannot purchase a ticket you have posted.',
+        title: 'Ticket Sold',
+        description: 'This ticket is no longer available.',
+      });
+      return;
+    }
+     if (buyer && buyer.id === ticket.postedBy) {
+      e.preventDefault();
+      toast({
+        variant: 'destructive',
+        title: 'Cannot Buy Own Ticket',
+        description: 'You cannot purchase a ticket you have posted.',
       });
       return;
     }
